@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Saber Pro Predictor IA - Decano</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #020617; --surface: #0a0f1e; --card: #0f172a;
+    --border: #1e293b; --border2: #334155;
+    --indigo: #6366f1; --cyan: #22d3ee; --violet: #8b5cf6;
+    --lime: #a3e635; --amber: #f59e0b; --rose: #f43f5e;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #475569;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  .mono { font-family: 'Space Mono', monospace; }
+
+  /* SIDEBAR */
+  .sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); padding: 24px 14px; display: flex; flex-direction: column; flex-shrink: 0; }
+  .logo-name { font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -1px; }
+  .logo-sub { font-size: 9px; color: var(--indigo); letter-spacing: 2px; margin-top: 2px; }
+  .logo-dept { font-size: 8px; color: var(--border2); letter-spacing: 1px; margin-top: 2px; }
+  .logo-wrap { margin-bottom: 24px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; border: none; cursor: pointer; width: 100%; background: transparent; color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; transition: all .2s; margin-bottom: 3px; text-align: left; }
+  .nav-item:hover { background: #1e293b; color: var(--text); }
+  .nav-item.active { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: #fff; }
+  .nav-icon { font-size: 15px; }
+  .user-card { background: var(--border); border-radius: 10px; padding: 12px; margin-top: auto; display: flex; align-items: center; gap: 10px; }
+  .user-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--indigo), var(--violet)); display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+  .user-name { font-size: 11px; font-weight: 700; }
+  .user-role { font-size: 9px; color: var(--subtle); }
+
+  /* MAIN */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { padding: 16px 28px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--surface); flex-shrink: 0; }
+  .topbar-title { font-size: 20px; font-weight: 800; }
+  .topbar-sub { font-size: 10px; color: var(--subtle); font-family: 'Space Mono', monospace; margin-top: 2px; }
+  .topbar-right { display: flex; gap: 8px; align-items: center; }
+  .filter-select { background: var(--border); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 12px; color: #94a3b8; font-size: 11px; font-family: 'Space Mono', monospace; outline: none; cursor: pointer; }
+  .notif-btn { background: #f43f5e22; border: 1px solid #f43f5e44; border-radius: 8px; padding: 8px 12px; font-size: 11px; color: var(--rose); font-family: 'Space Mono', monospace; cursor: pointer; }
+  .content { flex: 1; padding: 24px 28px; overflow-y: auto; }
+
+  /* CARDS */
+  .card { background: var(--card); border-radius: 14px; padding: 20px; border: 1px solid var(--border); }
+  .card-title { font-size: 13px; font-weight: 700; margin-bottom: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 20px; }
+
+  .kpi-card { background: var(--card); border-radius: 14px; padding: 18px; border: 1px solid; position: relative; overflow: hidden; }
+  .kpi-bg-icon { position: absolute; top: -10px; right: -6px; font-size: 52px; opacity: .07; }
+  .kpi-icon { font-size: 22px; margin-bottom: 6px; }
+  .kpi-value { font-size: 26px; font-weight: 800; font-family: 'Space Mono', monospace; }
+  .kpi-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .kpi-delta { font-size: 10px; margin-top: 6px; font-family: 'Space Mono', monospace; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 9px; color: var(--subtle); padding-bottom: 10px; font-family: 'Space Mono', monospace; letter-spacing: 1px; }
+  td { padding: 9px 0; font-size: 12px; border-top: 1px solid var(--border); }
+  .td-code { font-size: 10px; color: var(--subtle); font-family: 'Space Mono', monospace; }
+  .td-score { font-size: 13px; font-weight: 700; font-family: 'Space Mono', monospace; }
+
+  /* CHIP */
+  .chip { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-family: 'Space Mono', monospace; letter-spacing: .5px; border: 1px solid; }
+
+  /* MINI BARS */
+  .mini-bar-row { margin-bottom: 10px; }
+  .mini-bar-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .mini-bar-track { height: 4px; background: var(--border); border-radius: 2px; }
+  .mini-bar-fill { height: 100%; border-radius: 2px; }
+
+  /* ALERT BOX */
+  .alert-box { border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 11px; line-height: 1.5; }
+  .alert-warning { background: #f59e0b11; border: 1px solid #f59e0b33; color: var(--amber); }
+  .alert-success { background: #a3e63511; border: 1px solid #a3e63533; color: var(--lime); }
+
+  /* HISTOGRAM */
+  .hist-wrap { display: flex; align-items: flex-end; gap: 5px; height: 100px; }
+  .hist-bar { flex: 1; border-radius: 3px 3px 0 0; }
+
+  /* METRICS GRID */
+  .metrics-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+  .metric-item { background: var(--border); border-radius: 8px; padding: 12px; }
+  .metric-label { font-size: 9px; color: var(--subtle); font-family: 'Space Mono', monospace; }
+  .metric-value { font-size: 18px; font-weight: 800; color: var(--text); margin-top: 4px; }
+
+  /* SCREENS */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* BUTTON ROW */
+  .btn { padding: 8px 16px; border-radius: 8px; font-size: 11px; font-family: 'Space Mono', monospace; font-weight: 700; cursor: pointer; border: none; transition: opacity .2s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: #fff; }
+  .btn-secondary { background: var(--border); border: 1px solid var(--border2); color: var(--muted); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* COMPARISON CHART */
+  .comp-bar { background: linear-gradient(90deg, var(--indigo), var(--cyan)); height: 24px; border-radius: 4px; margin: 8px 0; position: relative; }
+  .comp-label { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-name">Saber Pro</div>
+    <div class="logo-sub mono">PREDICTOR IA</div>
+    <div class="logo-dept mono">Decanatura</div>
+  </div>
+  <nav>
+    <button class="nav-item active" onclick="showScreen('dashboard',this)"><span class="nav-icon">📊</span>Dashboard Ejecutivo</button>
+    <button class="nav-item" onclick="showScreen('programas',this)"><span class="nav-icon">🎓</span>Análisis Programas</button>
+    <button class="nav-item" onclick="showScreen('benchmarking',this)"><span class="nav-icon">🏆</span>Benchmarking</button>
+    <button class="nav-item" onclick="showScreen('calidad',this)"><span class="nav-icon">⭐</span>Indicadores</button>
+    <button class="nav-item" onclick="showScreen('reportes',this)"><span class="nav-icon">📋</span>Reportes</button>
+  </nav>
+  <div class="user-card">
+    <div class="user-avatar">👨‍💼</div>
+    <div>
+      <div class="user-name">Dr. Roberto Martínez</div>
+      <div class="user-role mono">Decano</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="screen-title">Desempeño Institucional</div>
+      <div class="topbar-sub">Año académico 2024 · Facultad de Ingeniería</div>
+    </div>
+    <div class="topbar-right">
+      <select class="filter-select" id="year-filter" onchange="filterByYear()">
+        <option value="2024">2024</option>
+        <option value="2023">2023</option>
+        <option value="2022">2022</option>
+      </select>
+      <div class="notif-btn">🔔 8</div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ── DASHBOARD EJECUTIVO ── -->
+    <div id="screen-dashboard" class="screen active">
+      <div class="alert-box alert-success">
+        ✓ La facultad mantiene un desempeño superior al promedio nacional. Predicción de puntaje Saber Pro: 258 pts (+18 vs. promedio nacional).
+      </div>
+
+      <div class="grid-4">
+        <div class="kpi-card" style="border-color:#6366f133">
+          <div class="kpi-bg-icon">👥</div>
+          <div class="kpi-icon">👥</div>
+          <div class="kpi-value" style="color:var(--indigo)">1,847</div>
+          <div class="kpi-label">Estudiantes en cohortes activas</div>
+          <div class="kpi-delta" style="color:var(--indigo)">+4.2% vs. 2023</div>
+        </div>
+        <div class="kpi-card" style="border-color:#22d3ee33">
+          <div class="kpi-bg-icon">📈</div>
+          <div class="kpi-icon">📈</div>
+          <div class="kpi-value" style="color:var(--cyan)">258</div>
+          <div class="kpi-label">Puntaje promedio predicho</div>
+          <div class="kpi-delta" style="color:var(--cyan)">+18 pts vs. nacional</div>
+        </div>
+        <div class="kpi-card" style="border-color:#f43f5e33">
+          <div class="kpi-bg-icon">⚠️</div>
+          <div class="kpi-icon">⚠️</div>
+          <div class="kpi-value" style="color:var(--rose)">12.4%</div>
+          <div class="kpi-label">Tasa de riesgo crítico</div>
+          <div class="kpi-delta" style="color:var(--rose)">−2.1 pp vs. 2023</div>
+        </div>
+        <div class="kpi-card" style="border-color:#a3e63533">
+          <div class="kpi-bg-icon">🎯</div>
+          <div class="kpi-icon">🎯</div>
+          <div class="kpi-value" style="color:var(--lime)">87.6%</div>
+          <div class="kpi-label">Graduación en plazo</div>
+          <div class="kpi-delta" style="color:var(--lime)">Acreditación vigente</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Distribución por programa -->
+        <div class="card">
+          <div class="card-title">Desempeño por programa académico</div>
+          <div id="program-dist" style="margin-bottom:12px"></div>
+          <table style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+            <thead><tr>
+              <th>Programa</th><th>Est.</th><th>Prom. pred.</th><th>Riesgo</th><th>Tendencia</th>
+            </tr></thead>
+            <tbody id="program-table"></tbody>
+          </table>
+        </div>
+
+        <!-- Cohortes histórico -->
+        <div class="card">
+          <div class="card-title">Evolución histórica (últimos 4 años)</div>
+          <div id="historic-chart" style="display:flex;align-items:flex-end;gap:8px;height:120px;width:100%"></div>
+          <div style="display:flex;justify-content:space-around;margin-top:10px;text-align:center">
+            <div><div class="axis-label" style="text-align:center;width:60px">2021</div></div>
+            <div><div class="axis-label" style="text-align:center;width:60px">2022</div></div>
+            <div><div class="axis-label" style="text-align:center;width:60px">2023</div></div>
+            <div><div class="axis-label" style="text-align:center;width:60px">2024</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ANÁLISIS PROGRAMAS ── -->
+    <div id="screen-programas" class="screen">
+      <div class="alert-box alert-warning">
+        ⚡ Programa de Ingeniería en Sistemas muestra desempeño excepcional (+31 pts vs promedio). Enfoque: Sistemas De Control requiere refuerzo temático.
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-title">Ingeniería en Sistemas</div>
+          <div style="font-size:24px;font-weight:800;color:var(--cyan);margin:12px 0">289</div>
+          <div style="font-size:10px;color:var(--muted)">Puntaje predicho</div>
+          <div class="metrics-grid" style="margin-top:12px">
+            <div class="metric-item"><div class="metric-label">ESTUDIANTES</div><div class="metric-value" style="color:var(--indigo)">342</div></div>
+            <div class="metric-item"><div class="metric-label">RIESGO CRÍTICO</div><div class="metric-value" style="color:var(--rose)">8.2%</div></div>
+            <div class="metric-item"><div class="metric-label">RETENCIÓN</div><div class="metric-value" style="color:var(--lime)">92.3%</div></div>
+            <div class="metric-item"><div class="metric-label">DESERCIÓN</div><div class="metric-value" style="color:var(--amber)">1.4%</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Ingeniería Electrónica</div>
+          <div style="font-size:24px;font-weight:800;color:var(--indigo);margin:12px 0">265</div>
+          <div style="font-size:10px;color:var(--muted)">Puntaje predicho</div>
+          <div class="metrics-grid" style="margin-top:12px">
+            <div class="metric-item"><div class="metric-label">ESTUDIANTES</div><div class="metric-value" style="color:var(--indigo)">298</div></div>
+            <div class="metric-item"><div class="metric-label">RIESGO CRÍTICO</div><div class="metric-value" style="color:var(--rose)">11.7%</div></div>
+            <div class="metric-item"><div class="metric-label">RETENCIÓN</div><div class="metric-value" style="color:var(--lime)">89.6%</div></div>
+            <div class="metric-item"><div class="metric-label">DESERCIÓN</div><div class="metric-value" style="color:var(--amber)">2.3%</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Ingeniería Civil</div>
+          <div style="font-size:24px;font-weight:800;color:var(--amber);margin:12px 0">241</div>
+          <div style="font-size:10px;color:var(--muted)">Puntaje predicho</div>
+          <div class="metrics-grid" style="margin-top:12px">
+            <div class="metric-item"><div class="metric-label">ESTUDIANTES</div><div class="metric-value" style="color:var(--indigo)">421</div></div>
+            <div class="metric-item"><div class="metric-label">RIESGO CRÍTICO</div><div class="metric-value" style="color:var(--rose)">15.9%</div></div>
+            <div class="metric-item"><div class="metric-label">RETENCIÓN</div><div class="metric-value" style="color:var(--lime)">85.2%</div></div>
+            <div class="metric-item"><div class="metric-label">DESERCIÓN</div><div class="metric-value" style="color:var(--amber)">3.1%</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Análisis detallado por competencia (Ingeniería Sistemas)</div>
+        <div id="comp-detail"></div>
+      </div>
+    </div>
+
+    <!-- ── BENCHMARKING ── -->
+    <div id="screen-benchmarking" class="screen">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Comparativa Saber Pro 2024: Facultad vs. Sistema</div>
+          <div style="margin-top:16px">
+            <div class="comp-label"><span>Facultad Ingeniería</span><span style="color:var(--cyan);font-weight:700">258 pts</span></div>
+            <div class="comp-bar" style="width:86%;background:linear-gradient(90deg,#22d3ee,#6366f1)"></div>
+            
+            <div class="comp-label"><span>Promedio Nacional Ingeniería</span><span style="color:var(--amber);font-weight:700">240 pts</span></div>
+            <div class="comp-bar" style="width:80%;background:linear-gradient(90deg,#f59e0b,#f43f5e)"></div>
+            
+            <div class="comp-label"><span>Promedio Universidades Similares</span><span style="color:var(--indigo);font-weight:700">246 pts</span></div>
+            <div class="comp-bar" style="width:82%;background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div>
+            
+            <div class="comp-label"><span>Promedio Nacional (todas carreras)</span><span style="color:var(--muted);font-weight:700">235 pts</span></div>
+            <div class="comp-bar" style="width:78%;background:#334155"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Posicionamiento nacional de programas</div>
+          <table>
+            <thead><tr>
+              <th>Programa</th><th>Puesto</th><th>Puntaje</th><th>Vs. Nacional</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:700">Ing. Sistemas</td>
+                <td class="td-code">12/89</td>
+                <td class="td-score" style="color:var(--cyan)">289</td>
+                <td style="font-size:11px;color:var(--lime);font-weight:700">▲ +49 pts</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700">Ing. Electrónica</td>
+                <td class="td-code">34/72</td>
+                <td class="td-score" style="color:var(--indigo)">265</td>
+                <td style="font-size:11px;color:var(--lime);font-weight:700">▲ +25 pts</td>
+              </tr>
+              <tr>
+                <td style="font-weight:700">Ing. Civil</td>
+                <td class="td-code">87/124</td>
+                <td class="td-score" style="color:var(--amber)">241</td>
+                <td style="font-size:11px;color:var(--rose);font-weight:700">▼ −1 pts</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Análisis de causas de buen desempeño relativo</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="background:#6366f111;border:1px solid #6366f133;border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--indigo);font-weight:700;margin-bottom:8px">✓ Fortalezas institucionales</div>
+            <div style="font-size:10px;color:var(--text);line-height:1.8">
+              • Profesorado con alto porcentaje Maestría/Doctorado<br>
+              • Infraestructura laboratorios actualizada<br>
+              • Énfasis en metodología investigativa<br>
+              • Convenios industria 4.0 activos<br>
+              • Dedicación docente preferente
+            </div>
+          </div>
+          <div style="background:#f59e0b11;border:1px solid #f59e0b33;border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--amber);font-weight:700;margin-bottom:8px">⚠️ Áreas de mejora</div>
+            <div style="font-size:10px;color:var(--text);line-height:1.8">
+              • Ing. Civil: debilidad en RC Cuantitativo<br>
+              • Brecha: estudiantes vulnerables (SISBEN)<br>
+              • Deserción en semestres 4-5<br>
+              • Cobertura deficiente de inglés avanzado<br>
+              • Seguimiento individual inconsistente
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INDICADORES DE CALIDAD ── -->
+    <div id="screen-calidad" class="screen">
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-title">Indicadores de retención y graduación</div>
+          <div class="metrics-grid" style="gap:16px;margin-bottom:16px">
+            <div style="text-align:center">
+              <div style="font-size:32px;font-weight:900;color:var(--lime)">87.6%</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Retención en plazo</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:32px;font-weight:900;color:var(--cyan)">2.1%</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Tasa deserción anual</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:32px;font-weight:900;color:var(--amber)">148</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Graduados últimos 12 m</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:32px;font-weight:900;color:var(--indigo)">94.2%</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Empleabilidad a 6 meses</div>
+            </div>
+          </div>
+          <div style="background:var(--border);border-radius:8px;padding:12px;font-size:10px;color:var(--muted);line-height:1.6">
+            <b style="color:var(--text)">Tendencia:</b> Retención mejora progresivamente. Meta institucional 2025: 89.5% (en camino).
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Acreditación y reconocimiento</div>
+          <div style="margin:16px 0">
+            <div style="background:#a3e63522;border:1px solid #a3e63544;border-radius:8px;padding:12px;margin-bottom:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--lime);margin-bottom:4px">✓ ACREDITACIÓN VIGENTE</div>
+              <div style="font-size:10px;color:var(--text)">Resolución Acreditación de Alta Calidad (6 años) - MINEDUCACIÓN. Válida hasta 2029.</div>
+            </div>
+            <div style="background:#6366f122;border:1px solid #6366f144;border-radius:8px;padding:12px;margin-bottom:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--indigo);margin-bottom:4px">📊 RANKING QS ENGINEERING 2024</div>
+              <div style="font-size:10px;color:var(--text)">Posicionamiento: #34 en Latinoamérica (categoría ingeniería). Mejora de 2 posiciones vs. 2023.</div>
+            </div>
+            <div style="background:#22d3ee22;border:1px solid #22d3ee44;border-radius:8px;padding:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:4px">🌍 ACREDITACIÓN INTERNACIONAL</div>
+              <div style="font-size:10px;color:var(--text)">En proceso: ABET (Ing. Sistemas, Electrónica). Evaluación externa: julio 2024.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Indicadores de investigación y proyección social</div>
+        <table>
+          <thead><tr>
+            <th>Indicador</th><th>2022</th><th>2023</th><th>2024</th><th>Meta 2025</th><th>Estado</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:700;font-size:11px">Artículos indexados / año</td>
+              <td class="td-code">28</td><td class="td-code">34</td><td class="td-code">41</td><td class="td-score" style="color:var(--indigo)">45</td>
+              <td><span class="chip" style="color:var(--lime);border-color:#a3e63544;background:#a3e63511">En camino</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight:700;font-size:11px">Proyectos de investigación activos</td>
+              <td class="td-code">12</td><td class="td-code">18</td><td class="td-code">24</td><td class="td-score" style="color:var(--indigo)">30</td>
+              <td><span class="chip" style="color:var(--lime);border-color:#a3e63544;background:#a3e63511">En camino</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight:700;font-size:11px">Convenios con industria</td>
+              <td class="td-code">8</td><td class="td-code">14</td><td class="td-code">19</td><td class="td-score" style="color:var(--indigo)">25</td>
+              <td><span class="chip" style="color:var(--cyan);border-color:#22d3ee44;background:#22d3ee11">Avanzado</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight:700;font-size:11px">Docentes con doctorado %</td>
+              <td class="td-code">68%</td><td class="td-code">72%</td><td class="td-code">76%</td><td class="td-score" style="color:var(--indigo)">80%</td>
+              <td><span class="chip" style="color:var(--lime);border-color:#a3e63544;background:#a3e63511">En camino</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── REPORTES EJECUTIVOS ── -->
+    <div id="screen-reportes" class="screen">
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-title">📊 Reportes ejecutivos</div>
+          <div style="space-y:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--border);border-radius:8px;margin-bottom:8px">
+              <span style="font-size:11px">Informe anual de desempeño Saber Pro</span>
+              <button class="btn btn-primary" style="padding:6px 12px;font-size:10px">Descargar</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--border);border-radius:8px;margin-bottom:8px">
+              <span style="font-size:11px">Análisis de retención y graduación</span>
+              <button class="btn btn-primary" style="padding:6px 12px;font-size:10px">Descargar</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--border);border-radius:8px;margin-bottom:8px">
+              <span style="font-size:11px">Benchmarking universidad nacional</span>
+              <button class="btn btn-primary" style="padding:6px 12px;font-size:10px">Descargar</button>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--border);border-radius:8px">
+              <span style="font-size:11px">Proyecciones 2025-2026</span>
+              <button class="btn btn-primary" style="padding:6px 12px;font-size:10px">Descargar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📌 Plan de acción institucional</div>
+          <div style="space-y:12px">
+            <div style="background:#6366f111;border:1px solid #6366f133;border-radius:8px;padding:12px;margin-bottom:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--indigo);margin-bottom:6px">🎯 Mejora de Ing. Civil</div>
+              <div style="font-size:10px;color:var(--text);line-height:1.6">
+                • Rediseño curricular módulos cuantitativo<br>
+                • Cátedra de nivelación (semestres 1-2)<br>
+                • Mentores pares especialistas<br>
+                • Plazo: implementación semestre 2024-2
+              </div>
+            </div>
+            <div style="background:#f59e0b11;border:1px solid #f59e0b33;border-radius:8px;padding:12px;margin-bottom:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:6px">🌐 Fortalecimiento de Inglés</div>
+              <div style="font-size:10px;color:var(--text);line-height:1.6">
+                • Alianza con institutos especializados<br>
+                • Intensivos semestrales gratuitos<br>
+                • Certificación TOEFL integrada<br>
+                • Meta: 70% C1+ en 18 meses
+              </div>
+            </div>
+            <div style="background:#22d3ee11;border:1px solid #22d3ee33;border-radius:8px;padding:12px">
+              <div style="font-size:11px;font-weight:700;color:var(--cyan);margin-bottom:6px">🤖 Expansión IA Predictor</div>
+              <div style="font-size:10px;color:var(--text);line-height:1.6">
+                • Integración modelo de riesgo temprano<br>
+                • Dashboard docentes mejorado<br>
+                • Alertas automáticas personalizadas<br>
+                • Rollout: todas las facultades Q4 2024
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recomendaciones para el Comité Académico</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--lime);margin-bottom:8px">✓ Continuar / Acelerar</div>
+            <div style="font-size:10px;color:var(--text);line-height:1.8">
+              • Cobertura de tutorías 1-a-1 para riesgo crítico<br>
+              • Fortalecimiento convocatorias investigación<br>
+              • Mantenimiento laboratorios avanzados<br>
+              • Promoción seminarios y semilleros
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--rose);margin-bottom:8px">⚠️ Acciones Inmediatas</div>
+            <div style="font-size:10px;color:var(--text);line-height:1.8">
+              • Plan contingencia retención Ing. Civil<br>
+              • Auditoría contenidos Razonamiento Cuantitativo<br>
+              • Capacitación docentes en pedagogía innovadora<br>
+              • Revisión criterios de admisión selectivos
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+const titles = { dashboard:'Desempeño Institucional', programas:'Análisis por Programas', benchmarking:'Benchmarking Nacional', calidad:'Indicadores de Calidad', reportes:'Reportes y Plan de Acción' };
+
+function showScreen(id, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('screen-title').textContent = titles[id];
+}
+
+function filterByYear() {
+  const year = document.getElementById('year-filter').value;
+  // Lógica para filtrar datos por año
+}
+
+// Programs distribution
+const programs = [
+  { name:'Ingeniería Sistemas', est:342, avg:289, risk:8.2, trend:'+3.2 pts' },
+  { name:'Ingeniería Electrónica', est:298, avg:265, risk:11.7, trend:'+1.8 pts' },
+  { name:'Ingeniería Civil', est:421, avg:241, risk:15.9, trend:'−0.9 pts' },
+  { name:'Ingeniería Industrial', est:312, avg:256, risk:13.1, trend:'+2.5 pts' },
+  { name:'Ingeniería Mecánica', est:245, avg:252, risk:14.2, trend:'+1.1 pts' },
+  { name:'Ingeniería Ambiental', est:229, avg:248, risk:12.8, trend:'+2.3 pts' },
+];
+
+const pd = document.getElementById('program-dist');
+programs.forEach(p => {
+  pd.innerHTML += `<div class="mini-bar-row">
+    <div class="mini-bar-header">
+      <span style="font-size:11px;color:#94a3b8;font-family:'Space Mono',monospace">${p.name}</span>
+      <span style="font-size:11px;color:#22d3ee;font-weight:700;font-family:'Space Mono',monospace">${p.avg}</span>
+    </div>
+    <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${(p.avg/300)*100}%;background:linear-gradient(90deg,#6366f1,#22d3ee)"></div></div>
+  </div>`;
+});
+
+const pt = document.getElementById('program-table');
+programs.forEach(p => {
+  const trendColor = p.trend.startsWith('+') ? '#22d3ee' : '#f43f5e';
+  pt.innerHTML += `<tr>
+    <td style="font-size:11px;font-weight:700">${p.name}</td>
+    <td class="td-code">${p.est}</td>
+    <td class="td-score" style="color:var(--cyan)">${p.avg}</td>
+    <td><span class="chip" style="border-color:#f59e0b44;background:#f59e0b11;color:var(--amber)">${p.risk.toFixed(1)}%</span></td>
+    <td style="font-size:11px;color:${trendColor};font-weight:700;font-family:'Space Mono',monospace">${p.trend}</td>
+  </tr>`;
+});
+
+// Historic evolution
+const historic = [
+  { year:2021, avg:243, values:[240, 248, 235, 256] },
+  { year:2022, avg:248, values:[245, 255, 238, 262] },
+  { year:2023, avg:253, values:[251, 262, 243, 274] },
+  { year:2024, avg:258, values:[258, 289, 241, 256] },
+];
+
+const hc = document.getElementById('historic-chart');
+historic.forEach((h, i) => {
+  hc.innerHTML += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%">
+    <div style="width:100%;height:${(h.avg/300)*120}px;background:linear-gradient(180deg,#6366f1,#22d3ee);border-radius:3px 3px 0 0;border:1px solid #334155"></div>
+  </div>`;
+});
+
+// Competencias detail
+const compsDetail = [
+  { label:'Razonamiento cuantitativo', ing_sys:298, ing_elec:278, ing_civ:224 },
+  { label:'Lectura crítica', ing_sys:295, ing_elec:268, ing_civ:248 },
+  { label:'Comunicación escrita', ing_sys:282, ing_elec:251, ing_civ:232 },
+  { label:'Inglés', ing_sys:278, ing_elec:258, ing_civ:241 },
+];
+
+const cd = document.getElementById('comp-detail');
+compsDetail.forEach(c => {
+  cd.innerHTML += `<div style="margin-bottom:14px">
+    <div style="font-size:10px;color:var(--muted);margin-bottom:6px">${c.label}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <div style="background:var(--border);border-radius:6px;padding:8px">
+        <div style="font-size:9px;color:var(--subtle)">SIS TEM AS</div>
+        <div style="font-size:14px;font-weight:700;color:var(--cyan);">${c.ing_sys}</div>
+      </div>
+      <div style="background:var(--border);border-radius:6px;padding:8px">
+        <div style="font-size:9px;color:var(--subtle)">ELECTRÓNICA</div>
+        <div style="font-size:14px;font-weight:700;color:var(--indigo);">${c.ing_elec}</div>
+      </div>
+      <div style="background:var(--border);border-radius:6px;padding:8px">
+        <div style="font-size:9px;color:var(--subtle)">CIVIL</div>
+        <div style="font-size:14px;font-weight:700;color:var(--amber);">${c.ing_civ}</div>
+      </div>
+    </div>
+  </div>`;
+});
+</script>
+</body>
+</html>
