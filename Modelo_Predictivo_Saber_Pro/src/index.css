@@ -1,0 +1,90 @@
+:root {
+  --bg: #06111f;
+  --surface: rgba(10, 18, 33, 0.78);
+  --border: rgba(148, 163, 184, 0.14);
+  --text: #d7e1f0;
+  --text-strong: #f8fbff;
+  --text-soft: #93a7c2;
+  --accent-cyan: #38bdf8;
+  --accent-lime: #bef264;
+  --shadow-soft: 0 24px 80px rgba(2, 6, 23, 0.36);
+  --font-base: 'Syne', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(190, 242, 100, 0.12), transparent 20%),
+    linear-gradient(180deg, #020617 0%, #06111f 46%, #0a1424 100%);
+  font-family: var(--font-base);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 92%);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+code {
+  font-family: var(--font-mono);
+}
+
+#root {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 48px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text-strong);
+}
+
+@media (max-width: 640px) {
+  #root {
+    width: min(100%, calc(100% - 20px));
+    padding-top: 20px;
+  }
+}

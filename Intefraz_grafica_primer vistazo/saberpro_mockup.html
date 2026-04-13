@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Saber Pro Predictor IA</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #020617; --surface: #0a0f1e; --card: #0f172a;
+    --border: #1e293b; --border2: #334155;
+    --indigo: #6366f1; --cyan: #22d3ee; --violet: #8b5cf6;
+    --lime: #a3e635; --amber: #f59e0b; --rose: #f43f5e;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #475569;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  .mono { font-family: 'Space Mono', monospace; }
+
+  /* SIDEBAR */
+  .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 24px 14px; display: flex; flex-direction: column; flex-shrink: 0; }
+  .logo-name { font-size: 20px; font-weight: 900; color: var(--text); letter-spacing: -1px; }
+  .logo-sub { font-size: 10px; color: var(--indigo); letter-spacing: 2.5px; margin-top: 2px; }
+  .logo-dept { font-size: 9px; color: var(--border2); letter-spacing: 1px; margin-top: 2px; }
+  .logo-wrap { margin-bottom: 28px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; border: none; cursor: pointer; width: 100%; background: transparent; color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; transition: all .2s; margin-bottom: 3px; text-align: left; }
+  .nav-item:hover { background: #1e293b; color: var(--text); }
+  .nav-item.active { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: #fff; }
+  .nav-icon { font-size: 15px; }
+  .user-card { background: var(--border); border-radius: 10px; padding: 12px; margin-top: auto; display: flex; align-items: center; gap: 10px; }
+  .user-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, var(--indigo), var(--violet)); display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+  .user-name { font-size: 11px; font-weight: 700; }
+  .user-role { font-size: 9px; color: var(--subtle); }
+
+  /* MAIN */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { padding: 16px 28px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--surface); flex-shrink: 0; }
+  .topbar-title { font-size: 20px; font-weight: 800; }
+  .topbar-sub { font-size: 10px; color: var(--subtle); font-family: 'Space Mono', monospace; margin-top: 2px; }
+  .topbar-right { display: flex; gap: 8px; align-items: center; }
+  .search-box { background: var(--border); border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 6px; }
+  .search-box input { background: none; border: none; color: #94a3b8; font-size: 11px; font-family: 'Space Mono', monospace; outline: none; width: 150px; }
+  .notif-btn { background: #f43f5e22; border: 1px solid #f43f5e44; border-radius: 8px; padding: 8px 12px; font-size: 11px; color: var(--rose); font-family: 'Space Mono', monospace; cursor: pointer; }
+  .content { flex: 1; padding: 24px 28px; overflow-y: auto; }
+
+  /* CARDS */
+  .card { background: var(--card); border-radius: 14px; padding: 20px; border: 1px solid var(--border); }
+  .card-title { font-size: 13px; font-weight: 700; margin-bottom: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 20px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 20px; }
+
+  .kpi-card { background: var(--card); border-radius: 14px; padding: 18px; border: 1px solid; position: relative; overflow: hidden; }
+  .kpi-bg-icon { position: absolute; top: -10px; right: -6px; font-size: 52px; opacity: .07; }
+  .kpi-icon { font-size: 22px; margin-bottom: 6px; }
+  .kpi-value { font-size: 26px; font-weight: 800; font-family: 'Space Mono', monospace; }
+  .kpi-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .kpi-delta { font-size: 10px; margin-top: 6px; font-family: 'Space Mono', monospace; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 9px; color: var(--subtle); padding-bottom: 10px; font-family: 'Space Mono', monospace; letter-spacing: 1px; }
+  td { padding: 9px 0; font-size: 12px; border-top: 1px solid var(--border); }
+  .td-code { font-size: 10px; color: var(--subtle); font-family: 'Space Mono', monospace; }
+  .td-score { font-size: 13px; font-weight: 700; font-family: 'Space Mono', monospace; }
+
+  /* CHIP */
+  .chip { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-family: 'Space Mono', monospace; letter-spacing: .5px; border: 1px solid; }
+
+  /* BAR CHART */
+  .bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 130px; padding: 0 4px; }
+  .bar-col { flex: 1; }
+  .bar { width: 100%; border-radius: 4px 4px 0 0; border: 1px solid #334155; transition: height .3s; }
+  .bar-label { font-size: 8px; color: var(--subtle); text-align: center; margin-top: 3px; font-family: 'Space Mono', monospace; }
+  .axis-labels { display: flex; justify-content: space-between; margin-top: 4px; }
+  .axis-label { font-size: 9px; color: var(--subtle); font-family: 'Space Mono', monospace; }
+
+  /* MINI BARS */
+  .mini-bar-row { margin-bottom: 10px; }
+  .mini-bar-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .mini-bar-track { height: 4px; background: var(--border); border-radius: 2px; }
+  .mini-bar-fill { height: 100%; border-radius: 2px; }
+
+  /* FORM */
+  .form-label { display: block; font-size: 10px; color: var(--muted); font-family: 'Space Mono', monospace; margin-bottom: 6px; letter-spacing: .5px; }
+  .form-input { width: 100%; background: var(--border); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 12px; font-family: 'Space Mono', monospace; outline: none; margin-bottom: 14px; }
+  .form-input:focus { border-color: var(--indigo); }
+  select.form-input { cursor: pointer; }
+  .btn { padding: 10px 20px; border-radius: 8px; font-size: 12px; font-family: 'Space Mono', monospace; font-weight: 700; cursor: pointer; border: none; transition: opacity .2s; }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: #fff; }
+  .btn-secondary { background: var(--border); border: 1px solid var(--border2); color: var(--muted); }
+
+  /* STEPS */
+  .steps { display: flex; align-items: center; gap: 8px; margin-bottom: 28px; }
+  .step-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; font-family: 'Space Mono', monospace; flex-shrink: 0; }
+  .step-dot.done { background: linear-gradient(135deg, var(--indigo), var(--violet)); color: #fff; }
+  .step-dot.active { background: var(--border); border: 2px solid var(--indigo); color: var(--indigo); }
+  .step-dot.todo { background: var(--card); border: 2px solid var(--border); color: var(--subtle); }
+  .step-label { font-size: 11px; font-family: 'Space Mono', monospace; }
+  .step-line { flex: 1; height: 1px; background: var(--border); max-width: 40px; }
+  .step-line.done { background: var(--indigo); }
+
+  /* SCORE DIAL */
+  .score-big { font-size: 80px; font-weight: 900; font-family: 'Space Mono', monospace; background: linear-gradient(135deg, var(--indigo), var(--cyan)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
+  .score-max { font-size: 14px; color: var(--muted); font-family: 'Space Mono', monospace; }
+  .progress-track { width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--indigo), var(--cyan)); border-radius: 4px; }
+
+  /* SCREENS */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* PROFILE GRID */
+  .profile-grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; }
+  .profile-avatar { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, var(--indigo), var(--violet)); margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+
+  /* REPORT CARDS */
+  .report-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+  .report-card { background: var(--card); border-radius: 14px; padding: 20px; cursor: pointer; border: 1px solid var(--border); transition: border-color .2s; }
+  .report-card:hover { border-color: var(--indigo); }
+  .report-icon { font-size: 28px; margin-bottom: 10px; }
+  .report-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .report-desc { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 14px; }
+  .report-footer { display: flex; justify-content: space-between; align-items: center; }
+  .report-size { font-size: 9px; color: var(--subtle); font-family: 'Space Mono', monospace; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* HISTOGRAM */
+  .hist-wrap { display: flex; align-items: flex-end; gap: 5px; height: 100px; }
+  .hist-bar { flex: 1; border-radius: 3px 3px 0 0; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-name">Saber Pro</div>
+    <div class="logo-sub mono">PREDICTOR IA</div>
+    <div class="logo-dept mono">Ingeniería de Sistemas</div>
+  </div>
+  <nav>
+    <button class="nav-item active" onclick="showScreen('dashboard',this)"><span class="nav-icon">⬡</span>Dashboard</button>
+    <button class="nav-item" onclick="showScreen('prediccion',this)"><span class="nav-icon">🎯</span>Predicción</button>
+    <button class="nav-item" onclick="showScreen('historial',this)"><span class="nav-icon">📂</span>Historial</button>
+    <button class="nav-item" onclick="showScreen('perfil',this)"><span class="nav-icon">👤</span>Perfil estudiante</button>
+    <button class="nav-item" onclick="showScreen('reportes',this)"><span class="nav-icon">📋</span>Reportes</button>
+  </nav>
+  <div class="user-card">
+    <div class="user-avatar">👩‍💼</div>
+    <div>
+      <div class="user-name">Prof. Ana García</div>
+      <div class="user-role mono">Coordinadora</div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="screen-title">Resumen general</div>
+      <div class="topbar-sub">Semestre 2024-2 · Universidad Nacional</div>
+    </div>
+    <div class="topbar-right">
+      <div class="search-box">
+        <span>🔍</span>
+        <input placeholder="Buscar estudiante..."/>
+      </div>
+      <div class="notif-btn">🔔 3</div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ── DASHBOARD ── -->
+    <div id="screen-dashboard" class="screen active">
+      <div class="grid-4">
+        <div class="kpi-card" style="border-color:#6366f133">
+          <div class="kpi-bg-icon">👥</div>
+          <div class="kpi-icon">👥</div>
+          <div class="kpi-value" style="color:var(--indigo)">312</div>
+          <div class="kpi-label">Estudiantes activos</div>
+          <div class="kpi-delta" style="color:var(--indigo)">+8 este semestre</div>
+        </div>
+        <div class="kpi-card" style="border-color:#22d3ee33">
+          <div class="kpi-bg-icon">🎯</div>
+          <div class="kpi-icon">🎯</div>
+          <div class="kpi-value" style="color:var(--cyan)">247.3</div>
+          <div class="kpi-label">Puntaje promedio pred.</div>
+          <div class="kpi-delta" style="color:var(--cyan)">▲ 3.1 pts vs. anterior</div>
+        </div>
+        <div class="kpi-card" style="border-color:#f43f5e33">
+          <div class="kpi-bg-icon">⚠️</div>
+          <div class="kpi-icon">⚠️</div>
+          <div class="kpi-value" style="color:var(--rose)">41</div>
+          <div class="kpi-label">En riesgo crítico</div>
+          <div class="kpi-delta" style="color:var(--rose)">13.1% del total</div>
+        </div>
+        <div class="kpi-card" style="border-color:#a3e63533">
+          <div class="kpi-bg-icon">🤖</div>
+          <div class="kpi-icon">🤖</div>
+          <div class="kpi-value" style="color:var(--lime)">91.4%</div>
+          <div class="kpi-label">Precisión del modelo</div>
+          <div class="kpi-delta" style="color:var(--lime)">R² = 0.87</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Student table -->
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <span class="card-title" style="margin:0">Estudiantes con mayor variación</span>
+            <span class="chip mono" style="color:var(--cyan);border-color:#22d3ee44;background:#22d3ee11">LIVE</span>
+          </div>
+          <table>
+            <thead><tr>
+              <th>Estudiante</th><th>Cód.</th><th>Pred.</th><th>Δ</th><th>Riesgo</th>
+            </tr></thead>
+            <tbody id="student-table"></tbody>
+          </table>
+        </div>
+
+        <!-- Distribution -->
+        <div class="card">
+          <div class="card-title">Distribución de puntajes predichos</div>
+          <div class="hist-wrap" id="histogram"></div>
+          <div class="axis-labels"><span class="axis-label">100</span><span class="axis-label">200</span><span class="axis-label">300</span></div>
+          <div style="display:flex;gap:10px;margin-top:16px">
+            <div style="flex:1;background:#f43f5e11;border:1px solid #f43f5e33;border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:20px;font-weight:800;color:var(--rose)" class="mono">41</div>
+              <div style="font-size:9px;color:var(--muted)">Riesgo alto</div>
+            </div>
+            <div style="flex:1;background:#f59e0b11;border:1px solid #f59e0b33;border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:20px;font-weight:800;color:var(--amber)" class="mono">98</div>
+              <div style="font-size:9px;color:var(--muted)">Riesgo medio</div>
+            </div>
+            <div style="flex:1;background:#22d3ee11;border:1px solid #22d3ee33;border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:20px;font-weight:800;color:var(--cyan)" class="mono">173</div>
+              <div style="font-size:9px;color:var(--muted)">Riesgo bajo</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PREDICCIÓN ── -->
+    <div id="screen-prediccion" class="screen">
+      <div class="steps">
+        <div class="step-dot done" id="dot1">1</div>
+        <span class="step-label" style="color:var(--text)" id="sl1">Datos académicos</span>
+        <div class="step-line" id="line1"></div>
+        <div class="step-dot active" id="dot2">2</div>
+        <span class="step-label" style="color:var(--muted)" id="sl2">Factores complementarios</span>
+        <div class="step-line" id="line2"></div>
+        <div class="step-dot todo" id="dot3">3</div>
+        <span class="step-label" style="color:var(--subtle)" id="sl3">Resultado</span>
+      </div>
+
+      <!-- Step 1 -->
+      <div id="pred-step1" class="grid-2">
+        <div class="card">
+          <div class="card-title">📚 Información académica</div>
+          <label class="form-label">PROMEDIO ACADÉMICO ACUMULADO</label>
+          <input class="form-input" type="number" placeholder="Ej. 3.8"/>
+          <label class="form-label">CRÉDITOS APROBADOS</label>
+          <input class="form-input" type="number" placeholder="Ej. 120"/>
+          <label class="form-label">SEMESTRE ACTUAL</label>
+          <input class="form-input" type="number" placeholder="Ej. 8"/>
+          <label class="form-label">MATERIAS REPROBADAS</label>
+          <input class="form-input" type="number" placeholder="Ej. 2"/>
+          <button class="btn btn-primary" style="width:100%" onclick="goStep(2)">Siguiente →</button>
+        </div>
+        <div class="card">
+          <div class="card-title">📋 Variables del modelo</div>
+          <div class="mono" style="font-size:11px;color:var(--muted);line-height:1.9">
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Promedio académico</span><span style="color:var(--indigo)">28%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Créditos aprobados</span><span style="color:var(--indigo)">18%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Semestre actual</span><span style="color:var(--indigo)">12%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Materias reprobadas</span><span style="color:var(--rose)">−9%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Horas de estudio</span><span style="color:var(--indigo)">15%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span>Nivel de inglés</span><span style="color:var(--indigo)">11%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:5px 0"><span>Semilleros activos</span><span style="color:var(--indigo)">7%</span></div>
+          </div>
+          <div style="margin-top:16px;background:#6366f111;border:1px solid #6366f133;border-radius:10px;padding:12px">
+            <div style="font-size:10px;color:var(--indigo);font-family:'Space Mono',monospace;margin-bottom:4px">ALGORITMO UTILIZADO</div>
+            <div style="font-size:12px">Random Forest + Regresión Múltiple</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:4px">Entrenado con 1,240 registros históricos</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div id="pred-step2" class="grid-2" style="display:none">
+        <div class="card">
+          <div class="card-title">🧩 Factores complementarios</div>
+          <label class="form-label">HORAS DE ESTUDIO SEMANAL (APROX.)</label>
+          <input class="form-input" type="number" placeholder="Ej. 15"/>
+          <label class="form-label">PARTICIPACIÓN EN SEMILLEROS</label>
+          <select class="form-input"><option>Sí</option><option>No</option></select>
+          <label class="form-label">NIVEL DE INGLÉS</label>
+          <select class="form-input"><option>B1</option><option>B2</option><option>C1</option><option>C2</option></select>
+          <label class="form-label">MODALIDAD DE ESTUDIO ACTUAL</label>
+          <select class="form-input"><option>Presencial</option><option>Virtual</option><option>Híbrido</option></select>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" onclick="goStep(1)">← Anterior</button>
+            <button class="btn btn-primary" style="flex:1" onclick="goStep(3)">🤖 Generar predicción</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">📌 Datos ingresados</div>
+          <div style="background:var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:6px" class="mono">PASO 1 — DATOS ACADÉMICOS</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div style="background:var(--card);border-radius:6px;padding:8px"><div style="font-size:9px;color:var(--subtle)" class="mono">PROMEDIO</div><div style="font-size:14px;font-weight:700;color:var(--indigo)" class="mono">3.8</div></div>
+              <div style="background:var(--card);border-radius:6px;padding:8px"><div style="font-size:9px;color:var(--subtle)" class="mono">CRÉDITOS</div><div style="font-size:14px;font-weight:700;color:var(--indigo)" class="mono">132</div></div>
+              <div style="background:var(--card);border-radius:6px;padding:8px"><div style="font-size:9px;color:var(--subtle)" class="mono">SEMESTRE</div><div style="font-size:14px;font-weight:700;color:var(--indigo)" class="mono">8°</div></div>
+              <div style="background:var(--card);border-radius:6px;padding:8px"><div style="font-size:9px;color:var(--subtle)" class="mono">REPROBADAS</div><div style="font-size:14px;font-weight:700;color:var(--indigo)" class="mono">0</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 — Result -->
+      <div id="pred-step3" style="display:none">
+        <div class="grid-2">
+          <div class="card" style="text-align:center;border-color:#6366f133">
+            <div style="font-size:11px;color:var(--muted);letter-spacing:2px;margin-bottom:12px" class="mono">PUNTAJE PREDICHO</div>
+            <div class="score-big">264</div>
+            <div class="score-max">/ 300 puntos</div>
+            <div style="margin:20px 0">
+              <div class="progress-track"><div class="progress-fill" style="width:88%"></div></div>
+              <div class="axis-labels"><span class="axis-label">0</span><span class="axis-label">150</span><span class="axis-label">300</span></div>
+            </div>
+            <span class="chip" style="color:var(--cyan);border-color:#22d3ee44;background:#22d3ee11">RIESGO BAJO</span>
+            <div style="margin-top:14px;font-size:10px;color:var(--subtle)" class="mono">Intervalo de confianza: [248 – 279]</div>
+            <button class="btn btn-secondary" style="margin-top:20px" onclick="goStep(1)">Nueva predicción</button>
+          </div>
+          <div class="card">
+            <div class="card-title">Desglose por competencia</div>
+            <div id="comp-bars"></div>
+            <div style="margin-top:18px;background:#f59e0b11;border:1px solid #f59e0b33;border-radius:10px;padding:12px">
+              <div style="font-size:10px;color:var(--amber);font-family:'Space Mono',monospace;margin-bottom:4px">💡 RECOMENDACIÓN</div>
+              <div style="font-size:11px;line-height:1.6">Reforzar <b>Comunicación escrita</b> e <b>Inglés</b> puede incrementar el puntaje estimado en <b style="color:var(--amber)">+12 pts</b>.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── HISTORIAL ── -->
+    <div id="screen-historial" class="screen">
+      <div class="grid-3">
+        <div class="card" style="border-color:#6366f133;text-align:center">
+          <div style="font-size:26px;font-weight:800;color:var(--indigo)" class="mono">487</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Registros totales</div>
+        </div>
+        <div class="card" style="border-color:#22d3ee33;text-align:center">
+          <div style="font-size:26px;font-weight:800;color:var(--cyan)" class="mono">4.2 pts</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Error absoluto medio</div>
+        </div>
+        <div class="card" style="border-color:#a3e63533;text-align:center">
+          <div style="font-size:26px;font-weight:800;color:var(--lime)" class="mono">93.7%</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">Predicciones dentro del rango</div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <span class="card-title" style="margin:0">Comparativo Predicción vs. Real</span>
+          <select style="background:var(--border);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:#94a3b8;font-size:11px;font-family:'Space Mono',monospace;outline:none">
+            <option>Todos los semestres</option><option>2024-1</option><option>2023-2</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Estudiante</th><th>Semestre</th><th>Predicción</th><th>Puntaje Real</th><th>Diferencia</th><th>Precisión</th></tr></thead>
+          <tbody id="hist-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── PERFIL ── -->
+    <div id="screen-perfil" class="screen">
+      <div class="profile-grid">
+        <div class="card" style="text-align:center;border-color:#6366f133">
+          <div class="profile-avatar">👩‍🎓</div>
+          <div style="font-size:16px;font-weight:800">Jhan Carlos Mesa.</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px" class="mono">COD: 20201045</div>
+          <div style="margin:12px 0"><span class="chip" style="color:var(--indigo);border-color:#6366f144;background:#6366f111">8° SEMESTRE</span></div>
+          <div style="background:#6366f111;border-radius:10px;padding:14px;margin-top:8px">
+            <div style="font-size:34px;font-weight:900;color:var(--indigo)" class="mono">287</div>
+            <div style="font-size:10px;color:var(--muted)">Puntaje predicho</div>
+          </div>
+          <div style="margin-top:12px;background:var(--border);border-radius:8px;padding:10px">
+            <div style="font-size:9px;color:var(--subtle)" class="mono">NIVEL DE RIESGO</div>
+            <div style="font-size:13px;font-weight:700;color:var(--cyan);margin-top:4px">BAJO ✓</div>
+          </div>
+        </div>
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-title">Información académica</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">PROMEDIO ACUMULADO</div><div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">4.2</div></div>
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">CRÉDITOS APROBADOS</div><div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">132 / 160</div></div>
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">MATERIAS REPROBADAS</div><div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">0</div></div>
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">NIVEL DE INGLÉS</div><div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">C1</div></div>
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">SEMILLERO ACTIVO</div><div style="font-size:16px;font-weight:800;color:var(--lime);margin-top:4px">Sí ✓</div></div>
+              <div style="background:var(--border);border-radius:8px;padding:12px"><div style="font-size:9px;color:var(--subtle)" class="mono">HORAS ESTUDIO/SEMANA</div><div style="font-size:16px;font-weight:800;color:var(--text);margin-top:4px">20 hrs</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Evolución del puntaje predicho por semestre</div>
+            <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
+              <div id="profile-chart" style="display:flex;align-items:flex-end;gap:8px;height:80px;width:100%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── REPORTES ── -->
+    <div id="screen-reportes" class="screen">
+      <div class="report-cards">
+        <div class="report-card">
+          <div class="report-icon">📊</div>
+          <div class="report-title">Reporte semestral completo</div>
+          <div class="report-desc">Predicciones, riesgos y comparativos por cohorte académica.</div>
+          <div class="report-footer"><span class="report-size">2.4 MB · PDF</span><button class="btn" style="background:#6366f122;border:1px solid #6366f144;color:var(--indigo);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+        <div class="report-card">
+          <div class="report-icon">⚠️</div>
+          <div class="report-title">Estudiantes en riesgo</div>
+          <div class="report-desc">Lista filtrada con indicadores de riesgo y recomendaciones personalizadas.</div>
+          <div class="report-footer"><span class="report-size">0.8 MB · PDF</span><button class="btn" style="background:#f43f5e22;border:1px solid #f43f5e44;color:var(--rose);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+        <div class="report-card">
+          <div class="report-icon">📈</div>
+          <div class="report-title">Desempeño por competencia</div>
+          <div class="report-desc">Análisis detallado de las 5 competencias evaluadas en Saber Pro.</div>
+          <div class="report-footer"><span class="report-size">1.1 MB · PDF</span><button class="btn" style="background:#22d3ee22;border:1px solid #22d3ee44;color:var(--cyan);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+        <div class="report-card">
+          <div class="report-icon">🗂️</div>
+          <div class="report-title">Informe docente</div>
+          <div class="report-desc">Resumen ejecutivo para coordinación académica y comité curricular.</div>
+          <div class="report-footer"><span class="report-size">0.6 MB · PDF</span><button class="btn" style="background:#a3e63522;border:1px solid #a3e63544;color:var(--lime);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+        <div class="report-card">
+          <div class="report-icon">🤖</div>
+          <div class="report-title">Métricas del modelo IA</div>
+          <div class="report-desc">Precisión, R², RMSE, análisis de variables e importancia de features.</div>
+          <div class="report-footer"><span class="report-size">1.3 MB · PDF</span><button class="btn" style="background:#f59e0b22;border:1px solid #f59e0b44;color:var(--amber);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+        <div class="report-card">
+          <div class="report-icon">🗃️</div>
+          <div class="report-title">Exportar datos CSV</div>
+          <div class="report-desc">Dataset completo de predicciones y variables para análisis externo.</div>
+          <div class="report-footer"><span class="report-size">4.7 MB · CSV</span><button class="btn" style="background:#8b5cf622;border:1px solid #8b5cf644;color:var(--violet);padding:6px 14px;font-size:10px">Exportar ↓</button></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+const titles = { dashboard:'Resumen general', prediccion:'Generar predicción', historial:'Historial de predicciones', perfil:'Perfil del estudiante', reportes:'Exportar reportes' };
+let currentStep = 1;
+
+function showScreen(id, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('screen-title').textContent = titles[id];
+}
+
+function goStep(n) {
+  currentStep = n;
+  ['pred-step1','pred-step2','pred-step3'].forEach((id,i) => {
+    document.getElementById(id).style.display = (i+1 === n) ? (n===3 ? 'block' : 'grid') : 'none';
+  });
+  // Update dots
+  for(let i=1;i<=3;i++){
+    const dot = document.getElementById('dot'+i);
+    const sl = document.getElementById('sl'+i);
+    dot.className = 'step-dot ' + (i < n ? 'done' : i === n ? 'active' : 'todo');
+    dot.textContent = i < n ? '✓' : i;
+    sl.style.color = i === n ? 'var(--text)' : i < n ? 'var(--muted)' : 'var(--subtle)';
+  }
+  for(let i=1;i<=2;i++){
+    const line = document.getElementById('line'+i);
+    line.className = 'step-line' + (n > i ? ' done' : '');
+  }
+}
+
+// Build student table
+const students = [
+  { name:'Santiago Zapata', code:'12345678', score:287, trend:'+12', risk:'Bajo', rc:'#22d3ee' },
+  { name:'Carlos Montoya', code:'12345678', score:241, trend:'−5', risk:'Medio', rc:'#f59e0b' },
+  { name:'Salomé Campiño', code:'12345678', score:198, trend:'−18', risk:'Alto', rc:'#f43f5e' },
+  { name:'Jhan Carlos Mesa', code:'12345678', score:264, trend:'+7', risk:'Bajo', rc:'#22d3ee' },
+];
+const stb = document.getElementById('student-table');
+students.forEach(s => {
+  stb.innerHTML += `<tr>
+    <td>${s.name}</td>
+    <td class="td-code">${s.code}</td>
+    <td class="td-score" style="color:var(--indigo)">${s.score}</td>
+    <td style="font-size:12px;color:${s.trend.startsWith('+') ? '#22d3ee' : '#f43f5e'};font-family:'Space Mono',monospace">${s.trend}</td>
+    <td><span class="chip" style="color:${s.rc};border-color:${s.rc}44;background:${s.rc}11">${s.risk}</span></td>
+  </tr>`;
+});
+
+// Build histogram
+const histData = [18,32,55,72,88,95,80,61,42,28,15,8];
+const hist = document.getElementById('histogram');
+histData.forEach((h,i) => {
+  const highlight = i >= 4 && i <= 7;
+  hist.innerHTML += `<div class="bar-col"><div class="bar" style="height:${h}%;background:${highlight ? 'linear-gradient(180deg,#6366f1,#8b5cf6)' : '#1e293b'}"></div></div>`;
+});
+
+// Build historial table
+const histRows = [
+  { name:'Santiago Zapata', sem:'2026-1', pred:251, real:248, diff:-3 },
+  { name:'Salomé Campiño', sem:'2026-1', pred:278, real:282, diff:+4 },
+  { name:'Carlos Montoya', sem:'2026-1', pred:223, real:219, diff:-4 },
+  { name:'Jhan Carlos Mesa', sem:'2026-1', pred:265, real:270, diff:+5 },
+];
+const ht = document.getElementById('hist-table');
+histRows.forEach(r => {
+  const pct = 100 - Math.abs(r.diff)*5;
+  ht.innerHTML += `<tr>
+    <td>${r.name}</td>
+    <td class="td-code">${r.sem}</td>
+    <td class="td-score" style="color:var(--indigo)">${r.pred}</td>
+    <td class="td-score">${r.real}</td>
+    <td style="font-size:12px;color:${r.diff>0?'#22d3ee':'#f43f5e'};font-family:'Space Mono',monospace">${r.diff>0?'+':''}${r.diff}</td>
+    <td><div style="width:60px;height:4px;background:var(--border);border-radius:2px"><div style="height:100%;width:${pct}%;background:var(--lime);border-radius:2px"></div></div></td>
+  </tr>`;
+});
+
+// Build competencias bars
+const comps = [
+  { label:'Razonamiento cuantitativo', value:271, color:'#6366f1' },
+  { label:'Lectura crítica', value:258, color:'#8b5cf6' },
+  { label:'Comunicación escrita', value:245, color:'#22d3ee' },
+  { label:'Inglés', value:241, color:'#a3e635' },
+  { label:'Competencias ciudadanas', value:262, color:'#f59e0b' },
+];
+const cb = document.getElementById('comp-bars');
+comps.forEach(c => {
+  cb.innerHTML += `<div class="mini-bar-row">
+    <div class="mini-bar-header">
+      <span style="font-size:11px;color:#94a3b8;font-family:'Space Mono',monospace">${c.label}</span>
+      <span style="font-size:11px;color:${c.color};font-weight:700;font-family:'Space Mono',monospace">${c.value}</span>
+    </div>
+    <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${(c.value/300)*100}%;background:${c.color}"></div></div>
+  </div>`;
+});
+
+// Profile chart
+const profileScores = [210,225,238,251,264,270,280,287];
+const pc = document.getElementById('profile-chart');
+profileScores.forEach((h,i) => {
+  const isLast = i === profileScores.length-1;
+  pc.innerHTML += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">
+    <div style="width:100%;height:${(h/300)*80}px;background:${isLast?'linear-gradient(180deg,#6366f1,#8b5cf6)':'#1e293b'};border-radius:3px 3px 0 0;border:1px solid #334155"></div>
+    <span style="font-size:8px;color:#475569;font-family:'Space Mono',monospace">S${i+1}</span>
+  </div>`;
+});
+</script>
+</body>
+</html>
