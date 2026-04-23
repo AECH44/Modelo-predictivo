@@ -1439,29 +1439,56 @@ function ProfessorSelectedStudentDetail({ student }) {
   )
 }
 
-function AuthLayout({ eyebrow, title, description, children }) {
-  return (
-    <div className="auth-page">
-      <section className="auth-panel auth-spotlight">
-        <div>
-          <span className="auth-kicker">{eyebrow}</span>
-          <h1>{title}</h1>
-          <p className="auth-description">{description}</p>
-        </div>
+function AuthLayout({ eyebrow, title, description, children, variant = 'default' }) {
+  const isLoginVariant = variant === 'login'
 
-        <div className="auth-demo-card demo-accounts-card">
-          <p className="auth-demo-label">Cuentas de prueba</p>
-          <div className="demo-accounts-list">
+  return (
+    <div className={`auth-page ${isLoginVariant ? 'login-page' : ''}`}>
+      {isLoginVariant ? (
+        <section className="auth-panel auth-portal">
+          <div className="portal-role-stage">
+            <div className="portal-role-copy">
+              <span className="auth-kicker">{eyebrow}</span>
+              <h1>Accesos por rol</h1>
+              <p className="auth-description">
+                Usa cualquiera de las cuentas de prueba para entrar con el perfil que necesites
+                revisar dentro del sistema.
+              </p>
+            </div>
+
+          <div className="portal-role-grid">
             {demoAccounts.map((account) => (
-              <div className="demo-account-item" key={account.email}>
+              <article className="portal-role-card" key={account.email}>
                 <strong>{account.role}</strong>
                 <span>{account.email}</span>
                 <span>{account.password}</span>
-              </div>
+              </article>
             ))}
           </div>
-        </div>
-      </section>
+          </div>
+        </section>
+      ) : (
+        <section className="auth-panel auth-spotlight">
+          <div>
+            <span className="auth-kicker">{eyebrow}</span>
+            <h1>{title}</h1>
+            <p className="auth-description">{description}</p>
+          </div>
+
+          <div className="auth-demo-card demo-accounts-card">
+            <p className="auth-demo-label">Cuentas de prueba</p>
+            <div className="demo-accounts-list">
+              {demoAccounts.map((account) => (
+                <div className="demo-account-item" key={account.email}>
+                  <strong>{account.role}</strong>
+                  <span>{account.email}</span>
+                  <span>{account.password}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="auth-panel auth-card">{children}</section>
     </div>
@@ -1472,6 +1499,8 @@ function LoginForm({ onLogin }) {
   const navigate = useNavigate()
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [feedback, setFeedback] = useState(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [rememberSession, setRememberSession] = useState(false)
 
   function handleSubmit(event) {
     event.preventDefault()
@@ -1487,23 +1516,34 @@ function LoginForm({ onLogin }) {
   return (
     <AuthLayout
       eyebrow="Inicio de sesion"
-      title="Acceso por rol"
-      description="Cada perfil entra a una vista diferente: rector, decano, profesor o estudiante."
+      title="Portal Academico SION"
+      description="Accede a los servicios institucionales y al seguimiento del modelo predictivo desde una experiencia alineada al portal principal."
+      variant="login"
     >
+      <div className="auth-brand" aria-label="SION">
+        <div className="auth-brand-mark" aria-hidden="true">
+          <span />
+        </div>
+        <div className="auth-brand-word">ProScore Analizer</div>
+      </div>
+
       <div className="auth-form-header">
-        <h2>Bienvenido</h2>
-        <p>Inicia sesion con la cuenta del rol que quieras revisar.</p>
+        <h2>Hola, bienvenido!</h2>
+        <p>
+          Accede a tu cuenta ingresando tu usuario o numero de documento y tu contrasena en los
+          campos indicados.
+        </p>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <label className="auth-label" htmlFor="login-email">
-          Correo
+          Usuario *
         </label>
         <input
           id="login-email"
           className="auth-input"
-          type="email"
-          placeholder="nombre@correo.com"
+          type="text"
+          placeholder="Ingresa usuario o numero de documento"
           value={formData.email}
           onChange={(event) =>
             setFormData((current) => ({ ...current, email: event.target.value }))
@@ -1512,19 +1552,42 @@ function LoginForm({ onLogin }) {
         />
 
         <label className="auth-label" htmlFor="login-password">
-          Contrasena
+          Contrasena *
         </label>
-        <input
-          id="login-password"
-          className="auth-input"
-          type="password"
-          placeholder="Minimo 6 caracteres"
-          value={formData.password}
-          onChange={(event) =>
-            setFormData((current) => ({ ...current, password: event.target.value }))
-          }
-          required
-        />
+        <div className="auth-password-field">
+          <input
+            id="login-password"
+            className="auth-input"
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Introduce tu contrasena"
+            value={formData.password}
+            onChange={(event) =>
+              setFormData((current) => ({ ...current, password: event.target.value }))
+            }
+            required
+          />
+          <button
+            className="password-toggle"
+            type="button"
+            onClick={() => setShowPassword((current) => !current)}
+            aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+          >
+            {showPassword ? '🙈' : '👁'}
+          </button>
+        </div>
+
+        <div className="auth-form-options">
+          <label className="auth-check" htmlFor="remember-session">
+            <input
+              id="remember-session"
+              type="checkbox"
+              checked={rememberSession}
+              onChange={(event) => setRememberSession(event.target.checked)}
+            />
+            <span>Mantenerme conectado</span>
+          </label>
+          <NavLink to="/forgot-password">Has olvidado tu contrasena?</NavLink>
+        </div>
 
         {feedback ? (
           <p className={`auth-feedback ${feedback.ok ? 'success' : 'error'}`}>
@@ -1532,14 +1595,11 @@ function LoginForm({ onLogin }) {
           </p>
         ) : null}
 
-        <button className="auth-button" type="submit">
-          Iniciar sesion
-        </button>
+        <button className="auth-button" type="submit">Iniciar</button>
       </form>
 
-      <div className="auth-links">
+      <div className="auth-links single-link login-links">
         <NavLink to="/register">Crear cuenta de estudiante</NavLink>
-        <NavLink to="/forgot-password">Olvide mi contrasena</NavLink>
       </div>
     </AuthLayout>
   )
@@ -1745,6 +1805,25 @@ function DashboardShell({
 
   return (
     <div className="dashboard-shell">
+      <header className="topbar">
+        <div>
+          <div className="topbar-title">{roleSettings.topbarTitle}</div>
+          <div className="topbar-sub">{roleSettings.topbarSubtitle}</div>
+        </div>
+        <div className="topbar-actions">
+          {user.role !== 'estudiante' ? (
+            <div className="search-box">
+              <span>🔍</span>
+              <input type="text" placeholder={searchPlaceholder} />
+            </div>
+          ) : null}
+          {topbarControls}
+          <button className="logout-button" type="button" onClick={handleLogout}>
+            Cerrar sesion
+          </button>
+        </div>
+      </header>
+
       <aside className="sidebar">
         <div className="logo-wrap">
           <div className="logo-name">Saber Pro</div>
@@ -1779,25 +1858,6 @@ function DashboardShell({
       </aside>
 
       <main className="main-panel">
-        <header className="topbar">
-          <div>
-            <div className="topbar-title">{roleSettings.topbarTitle}</div>
-            <div className="topbar-sub">{roleSettings.topbarSubtitle}</div>
-          </div>
-          <div className="topbar-actions">
-            {user.role !== 'estudiante' ? (
-              <div className="search-box">
-                <span>🔍</span>
-                <input type="text" placeholder={searchPlaceholder} />
-              </div>
-            ) : null}
-            {topbarControls}
-            <button className="logout-button" type="button" onClick={handleLogout}>
-              Cerrar sesion
-            </button>
-          </div>
-        </header>
-
         <div className="content-area">{children}</div>
       </main>
     </div>

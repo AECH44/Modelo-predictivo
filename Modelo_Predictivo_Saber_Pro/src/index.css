@@ -1,20 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap');
+
 :root {
-  --bg: #06111f;
-  --surface: rgba(10, 18, 33, 0.78);
-  --border: rgba(148, 163, 184, 0.14);
-  --text: #d7e1f0;
-  --text-strong: #f8fbff;
-  --text-soft: #93a7c2;
-  --accent-cyan: #38bdf8;
-  --accent-lime: #bef264;
-  --shadow-soft: 0 24px 80px rgba(2, 6, 23, 0.36);
-  --font-base: 'Syne', sans-serif;
-  --font-mono: 'Space Mono', monospace;
+  --bg: #eef2f6;
+  --bg-soft: #f6f8fb;
+  --surface: #ffffff;
+  --surface-muted: #f1f5f9;
+  --surface-info: #e8f0fb;
+  --border: #d8e0ea;
+  --border-strong: #c7d3e1;
+  --text: #334155;
+  --text-strong: #212f3d;
+  --text-soft: #627186;
+  --brand: #295884;
+  --brand-strong: #1f4a73;
+  --brand-soft: #5d9cec5e;
+  --accent-cyan: #5d9cec;
+  --accent-lime: #37bc9b;
+  --accent-amber: #f6bb42;
+  --accent-rose: #da4453;
+  --shadow-soft: 0 18px 44px rgba(17, 39, 63, 0.08);
+  --shadow-card: 0 8px 24px rgba(24, 49, 79, 0.08);
+  --font-base: 'Nunito Sans', sans-serif;
+  --font-mono: 'Source Sans 3', sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(190, 242, 100, 0.12), transparent 20%),
-    linear-gradient(180deg, #020617 0%, #06111f 46%, #0a1424 100%);
+  background: linear-gradient(180deg, #f7f9fc 0%, #edf2f8 100%);
   font-family: var(--font-base);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -36,6 +45,11 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 100% 40%, rgba(41, 88, 132, 0.08), transparent 28%),
+    radial-gradient(circle at 85% 82%, rgba(93, 156, 236, 0.06), transparent 22%),
+    linear-gradient(180deg, #f7f9fc 0%, #edf2f8 100%);
 }
 
 body::before {
@@ -43,11 +57,9 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(circle at center, black 40%, transparent 92%);
+  background:
+    radial-gradient(circle at 110% 60%, rgba(41, 88, 132, 0.08) 0, rgba(41, 88, 132, 0.08) 16%, transparent 16.5%),
+    radial-gradient(circle at 104% 60%, rgba(41, 88, 132, 0.03) 0, rgba(41, 88, 132, 0.03) 26%, transparent 26.5%);
 }
 
 a {
@@ -64,9 +76,10 @@ code {
 }
 
 #root {
-  width: min(1180px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 32px 0 48px;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
 }
 
 h1,
@@ -84,7 +97,6 @@ h3 {
 
 @media (max-width: 640px) {
   #root {
-    width: min(100%, calc(100% - 20px));
-    padding-top: 20px;
+    width: 100%;
   }
 }
