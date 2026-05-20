@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict w3WJk6JyyD8y6Xjb7xHb0OV7GkfUjpXK7wAOQWqUgTWcQoo5YIsFUnVImyiihh8
+\restrict RUn8hhwLFMRHRHHU1jKNrUz4cDAXrfjnzcY8IfavJxutbzJfSyMvJDaQFki8HIC
 
 -- Dumped from database version 18.4
 -- Dumped by pg_dump version 18.4
 
--- Started on 2026-05-19 19:56:56
+-- Started on 2026-05-19 20:15:18
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -193,7 +193,7 @@ CREATE SEQUENCE academico.estudiantes_id_estudiante_seq
 ALTER SEQUENCE academico.estudiantes_id_estudiante_seq OWNER TO postgres;
 
 --
--- TOC entry 5114 (class 0 OID 0)
+-- TOC entry 5136 (class 0 OID 0)
 -- Dependencies: 229
 -- Name: estudiantes_id_estudiante_seq; Type: SEQUENCE OWNED BY; Schema: academico; Owner: postgres
 --
@@ -238,7 +238,7 @@ CREATE SEQUENCE academico.pruebas_saber_pro_id_prueba_seq
 ALTER SEQUENCE academico.pruebas_saber_pro_id_prueba_seq OWNER TO postgres;
 
 --
--- TOC entry 5115 (class 0 OID 0)
+-- TOC entry 5137 (class 0 OID 0)
 -- Dependencies: 231
 -- Name: pruebas_saber_pro_id_prueba_seq; Type: SEQUENCE OWNED BY; Schema: academico; Owner: postgres
 --
@@ -278,7 +278,7 @@ CREATE SEQUENCE logs.log_modelo_id_log_seq
 ALTER SEQUENCE logs.log_modelo_id_log_seq OWNER TO postgres;
 
 --
--- TOC entry 5116 (class 0 OID 0)
+-- TOC entry 5138 (class 0 OID 0)
 -- Dependencies: 237
 -- Name: log_modelo_id_log_seq; Type: SEQUENCE OWNED BY; Schema: logs; Owner: postgres
 --
@@ -320,7 +320,7 @@ CREATE SEQUENCE modelo_ml.dataset_sintetico_id_dato_seq
 ALTER SEQUENCE modelo_ml.dataset_sintetico_id_dato_seq OWNER TO postgres;
 
 --
--- TOC entry 5117 (class 0 OID 0)
+-- TOC entry 5139 (class 0 OID 0)
 -- Dependencies: 233
 -- Name: dataset_sintetico_id_dato_seq; Type: SEQUENCE OWNED BY; Schema: modelo_ml; Owner: postgres
 --
@@ -362,7 +362,7 @@ CREATE SEQUENCE modelo_ml.predicciones_id_prediccion_seq
 ALTER SEQUENCE modelo_ml.predicciones_id_prediccion_seq OWNER TO postgres;
 
 --
--- TOC entry 5118 (class 0 OID 0)
+-- TOC entry 5140 (class 0 OID 0)
 -- Dependencies: 235
 -- Name: predicciones_id_prediccion_seq; Type: SEQUENCE OWNED BY; Schema: modelo_ml; Owner: postgres
 --
@@ -403,7 +403,7 @@ CREATE SEQUENCE seguridad.login_logs_id_log_seq
 ALTER SEQUENCE seguridad.login_logs_id_log_seq OWNER TO postgres;
 
 --
--- TOC entry 5119 (class 0 OID 0)
+-- TOC entry 5141 (class 0 OID 0)
 -- Dependencies: 227
 -- Name: login_logs_id_log_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -442,7 +442,7 @@ CREATE SEQUENCE seguridad.permisos_id_permiso_seq
 ALTER SEQUENCE seguridad.permisos_id_permiso_seq OWNER TO postgres;
 
 --
--- TOC entry 5120 (class 0 OID 0)
+-- TOC entry 5142 (class 0 OID 0)
 -- Dependencies: 243
 -- Name: permisos_id_permiso_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -481,7 +481,7 @@ CREATE SEQUENCE seguridad.rol_permiso_id_rol_permiso_seq
 ALTER SEQUENCE seguridad.rol_permiso_id_rol_permiso_seq OWNER TO postgres;
 
 --
--- TOC entry 5121 (class 0 OID 0)
+-- TOC entry 5143 (class 0 OID 0)
 -- Dependencies: 245
 -- Name: rol_permiso_id_rol_permiso_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -520,7 +520,7 @@ CREATE SEQUENCE seguridad.roles_id_rol_seq
 ALTER SEQUENCE seguridad.roles_id_rol_seq OWNER TO postgres;
 
 --
--- TOC entry 5122 (class 0 OID 0)
+-- TOC entry 5144 (class 0 OID 0)
 -- Dependencies: 239
 -- Name: roles_id_rol_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -559,7 +559,7 @@ CREATE SEQUENCE seguridad.usuario_rol_id_usuario_rol_seq
 ALTER SEQUENCE seguridad.usuario_rol_id_usuario_rol_seq OWNER TO postgres;
 
 --
--- TOC entry 5123 (class 0 OID 0)
+-- TOC entry 5145 (class 0 OID 0)
 -- Dependencies: 241
 -- Name: usuario_rol_id_usuario_rol_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -603,7 +603,7 @@ CREATE SEQUENCE seguridad.usuarios_id_usuario_seq
 ALTER SEQUENCE seguridad.usuarios_id_usuario_seq OWNER TO postgres;
 
 --
--- TOC entry 5124 (class 0 OID 0)
+-- TOC entry 5146 (class 0 OID 0)
 -- Dependencies: 225
 -- Name: usuarios_id_usuario_seq; Type: SEQUENCE OWNED BY; Schema: seguridad; Owner: postgres
 --
@@ -697,6 +697,233 @@ ALTER TABLE ONLY seguridad.usuario_rol ALTER COLUMN id_usuario_rol SET DEFAULT n
 --
 
 ALTER TABLE ONLY seguridad.usuarios ALTER COLUMN id_usuario SET DEFAULT nextval('seguridad.usuarios_id_usuario_seq'::regclass);
+
+
+--
+-- TOC entry 5114 (class 0 OID 16426)
+-- Dependencies: 230
+-- Data for Name: estudiantes; Type: TABLE DATA; Schema: academico; Owner: postgres
+--
+
+COPY academico.estudiantes (id_estudiante, codigo, nombres, apellidos, genero, estrato, ciudad, programa, promedio_academico) FROM stdin;
+1	2025001	Jhan	Mesa	Masculino	3	Medellin	Ingenieria Sistemas	4.20
+\.
+
+
+--
+-- TOC entry 5116 (class 0 OID 16434)
+-- Dependencies: 232
+-- Data for Name: pruebas_saber_pro; Type: TABLE DATA; Schema: academico; Owner: postgres
+--
+
+COPY academico.pruebas_saber_pro (id_prueba, id_estudiante, lectura_critica, matematicas, competencias_ciudadanas, ingles, razonamiento_cuantitativo, puntaje_global, periodo) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5122 (class 0 OID 16464)
+-- Dependencies: 238
+-- Data for Name: log_modelo; Type: TABLE DATA; Schema: logs; Owner: postgres
+--
+
+COPY logs.log_modelo (id_log, proceso, descripcion, fecha) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5118 (class 0 OID 16447)
+-- Dependencies: 234
+-- Data for Name: dataset_sintetico; Type: TABLE DATA; Schema: modelo_ml; Owner: postgres
+--
+
+COPY modelo_ml.dataset_sintetico (id_dato, estrato, promedio, horas_estudio, acceso_internet, puntaje_estimado) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5120 (class 0 OID 16455)
+-- Dependencies: 236
+-- Data for Name: predicciones; Type: TABLE DATA; Schema: modelo_ml; Owner: postgres
+--
+
+COPY modelo_ml.predicciones (id_prediccion, id_estudiante, modelo_usado, puntaje_predicho, precision_modelo, fecha_prediccion) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5112 (class 0 OID 16412)
+-- Dependencies: 228
+-- Data for Name: login_logs; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.login_logs (id_log, id_usuario, fecha_login, ip, exitoso) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5128 (class 0 OID 16509)
+-- Dependencies: 244
+-- Data for Name: permisos; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.permisos (id_permiso, nombre_permiso, descripcion) FROM stdin;
+1	VER_DASHBOARD	\N
+2	GESTIONAR_USUARIOS	\N
+3	VER_REPORTES	\N
+4	GENERAR_PREDICCIONES	\N
+5	VER_ESTUDIANTES	\N
+6	EDITAR_ESTUDIANTES	\N
+\.
+
+
+--
+-- TOC entry 5130 (class 0 OID 16519)
+-- Dependencies: 246
+-- Data for Name: rol_permiso; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.rol_permiso (id_rol_permiso, id_rol, id_permiso) FROM stdin;
+1	1	1
+2	1	2
+3	1	3
+4	1	4
+5	1	5
+6	1	6
+\.
+
+
+--
+-- TOC entry 5124 (class 0 OID 16477)
+-- Dependencies: 240
+-- Data for Name: roles; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.roles (id_rol, nombre_rol, descripcion) FROM stdin;
+1	ADMIN	Control total del sistema
+2	RECTOR	Acceso global académico
+3	DECANO	Gestión por facultad
+4	COORDINADOR	Gestión de programa
+5	ESTUDIANTE	Consulta académica
+\.
+
+
+--
+-- TOC entry 5126 (class 0 OID 16491)
+-- Dependencies: 242
+-- Data for Name: usuario_rol; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.usuario_rol (id_usuario_rol, id_usuario, id_rol) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5110 (class 0 OID 16396)
+-- Dependencies: 226
+-- Data for Name: usuarios; Type: TABLE DATA; Schema: seguridad; Owner: postgres
+--
+
+COPY seguridad.usuarios (id_usuario, nombres, apellidos, correo, password_hash, rol, fecha_creacion, activo) FROM stdin;
+\.
+
+
+--
+-- TOC entry 5147 (class 0 OID 0)
+-- Dependencies: 229
+-- Name: estudiantes_id_estudiante_seq; Type: SEQUENCE SET; Schema: academico; Owner: postgres
+--
+
+SELECT pg_catalog.setval('academico.estudiantes_id_estudiante_seq', 1, true);
+
+
+--
+-- TOC entry 5148 (class 0 OID 0)
+-- Dependencies: 231
+-- Name: pruebas_saber_pro_id_prueba_seq; Type: SEQUENCE SET; Schema: academico; Owner: postgres
+--
+
+SELECT pg_catalog.setval('academico.pruebas_saber_pro_id_prueba_seq', 1, false);
+
+
+--
+-- TOC entry 5149 (class 0 OID 0)
+-- Dependencies: 237
+-- Name: log_modelo_id_log_seq; Type: SEQUENCE SET; Schema: logs; Owner: postgres
+--
+
+SELECT pg_catalog.setval('logs.log_modelo_id_log_seq', 1, false);
+
+
+--
+-- TOC entry 5150 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: dataset_sintetico_id_dato_seq; Type: SEQUENCE SET; Schema: modelo_ml; Owner: postgres
+--
+
+SELECT pg_catalog.setval('modelo_ml.dataset_sintetico_id_dato_seq', 1, false);
+
+
+--
+-- TOC entry 5151 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: predicciones_id_prediccion_seq; Type: SEQUENCE SET; Schema: modelo_ml; Owner: postgres
+--
+
+SELECT pg_catalog.setval('modelo_ml.predicciones_id_prediccion_seq', 1, false);
+
+
+--
+-- TOC entry 5152 (class 0 OID 0)
+-- Dependencies: 227
+-- Name: login_logs_id_log_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.login_logs_id_log_seq', 1, false);
+
+
+--
+-- TOC entry 5153 (class 0 OID 0)
+-- Dependencies: 243
+-- Name: permisos_id_permiso_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.permisos_id_permiso_seq', 6, true);
+
+
+--
+-- TOC entry 5154 (class 0 OID 0)
+-- Dependencies: 245
+-- Name: rol_permiso_id_rol_permiso_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.rol_permiso_id_rol_permiso_seq', 6, true);
+
+
+--
+-- TOC entry 5155 (class 0 OID 0)
+-- Dependencies: 239
+-- Name: roles_id_rol_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.roles_id_rol_seq', 5, true);
+
+
+--
+-- TOC entry 5156 (class 0 OID 0)
+-- Dependencies: 241
+-- Name: usuario_rol_id_usuario_rol_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.usuario_rol_id_usuario_rol_seq', 1, false);
+
+
+--
+-- TOC entry 5157 (class 0 OID 0)
+-- Dependencies: 225
+-- Name: usuarios_id_usuario_seq; Type: SEQUENCE SET; Schema: seguridad; Owner: postgres
+--
+
+SELECT pg_catalog.setval('seguridad.usuarios_id_usuario_seq', 1, false);
 
 
 --
@@ -870,11 +1097,11 @@ ALTER TABLE ONLY seguridad.usuario_rol
     ADD CONSTRAINT usuario_rol_id_usuario_fkey FOREIGN KEY (id_usuario) REFERENCES seguridad.usuarios(id_usuario);
 
 
--- Completed on 2026-05-19 19:56:56
+-- Completed on 2026-05-19 20:15:18
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict w3WJk6JyyD8y6Xjb7xHb0OV7GkfUjpXK7wAOQWqUgTWcQoo5YIsFUnVImyiihh8
+\unrestrict RUn8hhwLFMRHRHHU1jKNrUz4cDAXrfjnzcY8IfavJxutbzJfSyMvJDaQFki8HIC
 
