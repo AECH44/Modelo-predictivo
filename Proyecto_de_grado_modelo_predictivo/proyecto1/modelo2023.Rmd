@@ -1,0 +1,76 @@
+---
+title: "modelo_desercion"
+author: "Wilson Arana"
+date: "2023-12-12"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Modelo de alertas tempranas
+
+A continuación, se presenta la construcción del modelo a ser aplicado basado en los datos académicos y la información de matrícula. Se tomaron 113 observaciones en matricula desde el año 2006 al año 2021, incluyendo 51 casos de estudiantes que culminaron sus estudios. Para el presente modelo se realizará una regresión logística.
+
+```{r cars}
+library(readxl)
+bd_regresion_Limpia <- read_excel("bd.xlsx")
+BDRL <- bd_regresion_Limpia
+dim(BDRL)
+names(BDRL)
+View(BDRL)
+```
+
+## Exploración de Datos
+
+Se muestra un ejemplo de los primeros datos de la base de datos utilizada:
+
+```{r pressure, echo=FALSE}
+head(BDRL)
+```
+
+## Exploración del MOdelo
+
+```{r}
+
+modelo_bruto<- glm(DESERCION ~ ORIGEN+EDAD+GENERO+ESTADO_CIVIL+RELIGION+ESTRATO+VULNERABLE+VICTIMA_CONFLICTO+NECESIDAD_EDUCATIVAS+SISBEN+VALIDO_BACHILLERATO+NIVEL_EDU._PADRE+NIVEL._EDU._MADRE+NUMERO_HERMANOS+N._PERSONAS_CARGO+TRAB.__ESTE_PERIODO+RESIDENTE+PROMEDIO_GENERAL+MAT+RELG+PROG, data=BDRL, family="binomial")
+summary(modelo_bruto)
+```
+
+```{r}
+
+modelo_BDRL_final<- glm(DESERCION ~ ORIGEN+GENERO+SISBEN+PROMEDIO_GENERAL+MAT+RELG+PROG, data=BDRL, family="binomial")
+summary(modelo_BDRL_final)
+
+```
+
+```{r}
+library(vcd)
+predicciones <- ifelse(test = modelo_BDRL_final$fitted.values > 0.5, yes = 1, no = 0)
+matriz_confusion <- table(modelo_BDRL_final$model$DESERCION, predicciones,
+                          dnn = c("observaciones", "predicciones"))
+matriz_confusion
+```
+
+```{r}
+mosaic(matriz_confusion, shade = T, colorize = T,
+       gp = gpar(fill = matrix(c("green3", "red2", "red2", "green3"), 2, 2)))
+```
+
+Lo anterior denota una acierto del 71% de los casos, asunto que se irá mejorando a medida que se alimente el modelo con más datos reales y actualizados.
+
+```{r}
+# Diferencia de residuos
+dif_residuos <- modelo_BDRL_final$null.deviance - modelo_BDRL_final$deviance
+
+# Grados libertad
+df <- modelo_BDRL_final$df.null - modelo_BDRL_final$df.residual
+# p-value
+p_value <- pchisq(q = dif_residuos,df = df, lower.tail = FALSE)
+
+paste("Diferencia de residuos:", round(dif_residuos, 4))
+paste("p-value:", round(p_value, 9))
+```
+
+También se comprueba la significacncia del modelo con un p-value \<0,05 por tanto, la ecuación general del modelo sería:
