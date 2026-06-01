@@ -7,8 +7,15 @@ import {
   useNavigate,
 } from 'react-router-dom'
 import './App.css'
+import {
+  apiLogin,
+  apiLogout,
+  apiMe,
+  apiRecover,
+  apiRegister,
+  apiUpdateProfile,
+} from './api.js'
 
-const STORAGE_USERS_KEY = 'saberpro.users'
 const STORAGE_SESSION_KEY = 'saberpro.session'
 
 const PROGRAMS = {
@@ -124,63 +131,8 @@ const STUDENT_RECORDS = [
   },
 ]
 
-const defaultUsers = [
-  {
-    username: 'Dra. Maria del Carmen',
-    email: 'rector@saberpro.edu.co',
-    age: '54',
-    password: '123456',
-    role: 'rector',
-    program: 'all',
-  },
-  {
-    username: 'Dr. Roberto Martinez',
-    email: 'decano@saberpro.edu.co',
-    age: '47',
-    password: '123456',
-    role: 'decano',
-    program: 'sistemas',
-  },
-  {
-    username: 'Prof. Carlos Lopez',
-    email: 'profesor@saberpro.edu.co',
-    age: '39',
-    password: '123456',
-    role: 'profesor',
-    program: 'sistemas',
-  },
-  {
-    username: 'Jhan Carlos Mesa',
-    email: 'jhan.mesa@saberpro.edu.co',
-    age: '24',
-    password: '123456',
-    role: 'estudiante',
-    program: 'industrial',
-    studentRecordId: 'stu-ind-02',
-    semester: '',
-    studyHours: '',
-    englishLevel: '',
-  },
-]
-
-const demoAccounts = [
-  { role: 'Rector', email: 'rector@saberpro.edu.co', password: '123456' },
-  { role: 'Decano', email: 'decano@saberpro.edu.co', password: '123456' },
-  { role: 'Profesor', email: 'profesor@saberpro.edu.co', password: '123456' },
-  { role: 'Estudiante', email: 'jhan.mesa@saberpro.edu.co', password: '123456' },
-]
-
-const LEGACY_REMOVED_EMAILS = new Set([
-  'admin@saberpro.edu.co',
-  'decano.sistemas@saberpro.edu.co',
-  'decano.industrial@saberpro.edu.co',
-  'profesor.sistemas@saberpro.edu.co',
-  'profesor.industrial@saberpro.edu.co',
-  'laura@saberpro.edu.co',
-  'camila@saberpro.edu.co',
-  'carlos.andres@saberpro.edu.co',
-  'jhan.carlos@saberpro.edu.co',
-])
+// Las cuentas demo y los usuarios reales viven en la base de datos
+// (tabla `usuarios`). El cliente no almacena correos ni contrasenas.
 
 const PROGRAM_OPTIONS = [
   { value: 'sistemas', label: 'Ingenieria de Sistemas' },
@@ -476,10 +428,11 @@ function normalizeUser(user, index = 0) {
   const program = role === 'rector' ? 'all' : user.program || 'sistemas'
 
   return {
+    id: user.id ?? null,
+    documento: user.documento || '',
     username,
     email: normalizedEmail,
     age: String(user.age || '20'),
-    password: user.password || '123456',
     role,
     program,
     studentRecordId: user.studentRecordId || null,
@@ -487,28 +440,6 @@ function normalizeUser(user, index = 0) {
     studyHours: String(user.studyHours || '12'),
     englishLevel: user.englishLevel || 'B1',
   }
-}
-
-function mergeUsers(storedUsers) {
-  const userMap = new Map()
-
-  defaultUsers.map(normalizeUser).forEach((user) => {
-    userMap.set(user.email, user)
-  })
-
-  storedUsers
-    .map(normalizeUser)
-    .filter((user) => !LEGACY_REMOVED_EMAILS.has(user.email))
-    .forEach((user) => {
-    userMap.set(user.email, user)
-  })
-
-  return [...userMap.values()]
-}
-
-function loadUsers() {
-  const storedUsers = readStorage(STORAGE_USERS_KEY, [])
-  return mergeUsers(storedUsers)
 }
 
 function loadSession() {
@@ -1439,56 +1370,61 @@ function ProfessorSelectedStudentDetail({ student }) {
   )
 }
 
-function AuthLayout({ eyebrow, title, description, children, variant = 'default' }) {
-  const isLoginVariant = variant === 'login'
-
+function AuthLayout({ eyebrow, children }) {
+  // Layout fijo: el panel izquierdo (descripcion del proyecto) es el mismo
+  // para login, registro y recuperacion de contrasena. Solo cambian los
+  // formularios del lado derecho (`children`).
   return (
-    <div className={`auth-page ${isLoginVariant ? 'login-page' : ''}`}>
-      {isLoginVariant ? (
-        <section className="auth-panel auth-portal">
-          <div className="portal-role-stage">
-            <div className="portal-role-copy">
-              <span className="auth-kicker">{eyebrow}</span>
-              <h1>Accesos por rol</h1>
-              <p className="auth-description">
-                Usa cualquiera de las cuentas de prueba para entrar con el perfil que necesites
-                revisar dentro del sistema.
-              </p>
-            </div>
-
-          <div className="portal-role-grid">
-            {demoAccounts.map((account) => (
-              <article className="portal-role-card" key={account.email}>
-                <strong>{account.role}</strong>
-                <span>{account.email}</span>
-                <span>{account.password}</span>
-              </article>
-            ))}
+    <div className="auth-page login-page">
+      <section className="auth-panel auth-portal">
+        <div className="portal-role-stage">
+          <div className="portal-role-copy">
+            <span className="auth-kicker">{eyebrow || 'Proyecto'}</span>
+            <h1>ProScore Analizer</h1>
+            <p className="auth-description">
+              Se desarrollara un sistema predictivo de clasificacion supervisada
+              para la estimacion del desempeno de estudiantes en las pruebas Saber
+              Pro, utilizando una arquitectura hibrida basada en Regresion
+              Logistica Multinomial y Gradient Boosting. El modelo tendra como
+              variable objetivo la clasificacion del rendimiento academico en
+              diferentes categorias de desempeno (bajo, medio y alto), a partir
+              de variables predictoras de caracter academico, socioeconomico y
+              demografico, incluyendo promedio acumulado, estrato socioeconomico,
+              programa academico, genero, edad, antecedentes academicos, acceso a
+              recursos tecnologicos y habitos de estudio.
+            </p>
+            <p className="auth-description">
+              El flujo de procesamiento contempla las etapas de extraccion,
+              integracion y depuracion de datos, tratamiento de valores
+              faltantes, deteccion de anomalias, codificacion de variables
+              categoricas mediante tecnicas de encoding y escalamiento de
+              variables numericas cuando sea requerido. Como primera fase, se
+              implementara una Regresion Logistica Multiple como modelo base
+              para obtener probabilidades de pertenencia a cada clase y analizar
+              la relevancia estadistica de las variables independientes.
+              Posteriormente, se entrenara un modelo Gradient Boosting para
+              capturar patrones no lineales, interacciones complejas y reducir
+              el error residual generado por el clasificador inicial.
+            </p>
+            <p className="auth-description">
+              Adicionalmente, se evaluara una estrategia de Stacking donde las
+              probabilidades generadas por la Regresion Logistica seran
+              utilizadas como caracteristicas adicionales para el modelo de
+              Gradient Boosting, conformando una arquitectura de ensamble
+              orientada a maximizar el desempeno predictivo. La validacion del
+              sistema se realizara mediante particionamiento de datos en
+              conjuntos de entrenamiento y prueba, complementado con validacion
+              cruzada, utilizando metricas de evaluacion como Accuracy,
+              Precision, Recall, F1-Score, ROC-AUC y Matriz de Confusion. El
+              objetivo final es construir un modelo robusto, interpretable y
+              escalable que permita identificar tempranamente factores asociados
+              al rendimiento en las pruebas Saber Pro y generar predicciones
+              confiables que apoyen la toma de decisiones academicas e
+              institucionales.
+            </p>
           </div>
-          </div>
-        </section>
-      ) : (
-        <section className="auth-panel auth-spotlight">
-          <div>
-            <span className="auth-kicker">{eyebrow}</span>
-            <h1>{title}</h1>
-            <p className="auth-description">{description}</p>
-          </div>
-
-          <div className="auth-demo-card demo-accounts-card">
-            <p className="auth-demo-label">Cuentas de prueba</p>
-            <div className="demo-accounts-list">
-              {demoAccounts.map((account) => (
-                <div className="demo-account-item" key={account.email}>
-                  <strong>{account.role}</strong>
-                  <span>{account.email}</span>
-                  <span>{account.password}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       <section className="auth-panel auth-card">{children}</section>
     </div>
@@ -1497,29 +1433,30 @@ function AuthLayout({ eyebrow, title, description, children, variant = 'default'
 
 function LoginForm({ onLogin }) {
   const navigate = useNavigate()
-  const [formData, setFormData] = useState({ email: '', password: '' })
+  const [formData, setFormData] = useState({ identifier: '', password: '' })
   const [feedback, setFeedback] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [rememberSession, setRememberSession] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      const result = await onLogin(formData)
+      setFeedback(result)
 
-    const result = onLogin(formData)
-    setFeedback(result)
-
-    if (result.ok) {
-      navigate('/inicio', { replace: true })
+      if (result.ok) {
+        navigate('/inicio', { replace: true })
+      }
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
-    <AuthLayout
-      eyebrow="Inicio de sesion"
-      title="Portal Academico SION"
-      description="Accede a los servicios institucionales y al seguimiento del modelo predictivo desde una experiencia alineada al portal principal."
-      variant="login"
-    >
+    <AuthLayout eyebrow="Inicio de sesion">
       <div className="auth-brand" aria-label="SION">
         <div className="auth-brand-mark" aria-hidden="true">
           <span />
@@ -1536,17 +1473,17 @@ function LoginForm({ onLogin }) {
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>
-        <label className="auth-label" htmlFor="login-email">
+        <label className="auth-label" htmlFor="login-identifier">
           Usuario *
         </label>
         <input
-          id="login-email"
+          id="login-identifier"
           className="auth-input"
           type="text"
-          placeholder="Ingresa usuario o numero de documento"
-          value={formData.email}
+          placeholder="Correo o numero de documento"
+          value={formData.identifier}
           onChange={(event) =>
-            setFormData((current) => ({ ...current, email: event.target.value }))
+            setFormData((current) => ({ ...current, identifier: event.target.value }))
           }
           required
         />
@@ -1595,7 +1532,9 @@ function LoginForm({ onLogin }) {
           </p>
         ) : null}
 
-        <button className="auth-button" type="submit">Iniciar</button>
+        <button className="auth-button" type="submit" disabled={submitting}>
+          {submitting ? 'Validando…' : 'Iniciar'}
+        </button>
       </form>
 
       <div className="auth-links single-link login-links">
@@ -1605,42 +1544,119 @@ function LoginForm({ onLogin }) {
   )
 }
 
+// Validaciones del formulario de registro (espejo de las del backend).
+const REGISTER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+const REGISTER_NAME_RE =
+  /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/
+const REGISTER_DOC_RE = /^\d{5,15}$/
+
+function validateRegisterName(name) {
+  const value = (name || '').trim()
+  if (value.length < 3) return 'El nombre debe tener al menos 3 caracteres.'
+  if (value.length > 80) return 'El nombre no puede superar los 80 caracteres.'
+  if (!REGISTER_NAME_RE.test(value)) {
+    return 'El nombre solo puede contener letras y espacios (sin numeros ni simbolos).'
+  }
+  return null
+}
+
+function validateRegisterEmail(email) {
+  const value = (email || '').trim()
+  if (!value) return 'El correo es obligatorio.'
+  if (!REGISTER_EMAIL_RE.test(value)) return 'Correo electronico invalido.'
+  return null
+}
+
+function validateRegisterDocumento(doc) {
+  const value = (doc || '').toString().trim()
+  if (!value) return 'El documento de identidad es obligatorio.'
+  if (!REGISTER_DOC_RE.test(value)) {
+    return 'El documento debe contener entre 5 y 15 digitos numericos.'
+  }
+  return null
+}
+
 function RegisterForm({ onRegister }) {
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     username: '',
+    documento: '',
     email: '',
-    age: '',
     password: '',
     program: 'sistemas',
   })
   const [feedback, setFeedback] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(event) {
+  function validateField(field, value) {
+    if (field === 'username') return validateRegisterName(value)
+    if (field === 'email') return validateRegisterEmail(value)
+    if (field === 'documento') return validateRegisterDocumento(value)
+    return null
+  }
+
+  function handleChange(field, value) {
+    setFormData((current) => ({ ...current, [field]: value }))
+    if (fieldErrors[field]) {
+      // Re-valida en caliente para borrar el error en cuanto el usuario corrige.
+      const next = validateField(field, value)
+      setFieldErrors((current) => ({ ...current, [field]: next }))
+    }
+  }
+
+  function handleBlur(field) {
+    const err = validateField(field, formData[field])
+    setFieldErrors((current) => ({ ...current, [field]: err }))
+  }
+
+  async function handleSubmit(event) {
     event.preventDefault()
+    if (submitting) return
 
-    const result = onRegister(formData)
-    setFeedback(result)
+    const errors = {
+      username: validateRegisterName(formData.username),
+      documento: validateRegisterDocumento(formData.documento),
+      email: validateRegisterEmail(formData.email),
+      password:
+        !formData.password.trim()
+          ? 'La contrasena es obligatoria.'
+          : formData.password.trim().length < 6
+            ? 'La contrasena debe tener al menos 6 caracteres.'
+            : null,
+    }
+    setFieldErrors(errors)
+    const firstError = Object.values(errors).find(Boolean)
+    if (firstError) {
+      setFeedback({ ok: false, message: firstError })
+      return
+    }
 
-    if (result.ok) {
-      navigate('/inicio', { replace: true })
+    setSubmitting(true)
+    try {
+      const result = await onRegister(formData)
+      setFeedback(result)
+
+      if (result.ok) {
+        navigate('/inicio', { replace: true })
+      }
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
     <AuthLayout
       eyebrow="Registro"
-      title="Registro estudiantil"
-      description="El registro crea una cuenta de estudiante y solo permite escoger entre Ingenieria de Sistemas o Industrial."
     >
       <div className="auth-form-header">
         <h2>Nueva cuenta</h2>
         <p>Este formulario crea usuarios con vista exclusiva de estudiante.</p>
       </div>
 
-      <form className="auth-form" onSubmit={handleSubmit}>
+      <form className="auth-form" onSubmit={handleSubmit} noValidate>
         <label className="auth-label" htmlFor="register-username">
-          Nombre de usuario
+          Nombre completo
         </label>
         <input
           id="register-username"
@@ -1648,11 +1664,36 @@ function RegisterForm({ onRegister }) {
           type="text"
           placeholder="Tu nombre"
           value={formData.username}
-          onChange={(event) =>
-            setFormData((current) => ({ ...current, username: event.target.value }))
-          }
+          onChange={(event) => handleChange('username', event.target.value)}
+          onBlur={() => handleBlur('username')}
+          aria-invalid={fieldErrors.username ? 'true' : 'false'}
           required
         />
+        {fieldErrors.username ? (
+          <p className="auth-feedback error">{fieldErrors.username}</p>
+        ) : null}
+
+        <label className="auth-label" htmlFor="register-documento">
+          Documento de identidad
+        </label>
+        <input
+          id="register-documento"
+          className="auth-input"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          placeholder="Solo numeros (5 a 15 digitos)"
+          value={formData.documento}
+          onChange={(event) =>
+            handleChange('documento', event.target.value.replace(/\D/g, ''))
+          }
+          onBlur={() => handleBlur('documento')}
+          aria-invalid={fieldErrors.documento ? 'true' : 'false'}
+          required
+        />
+        {fieldErrors.documento ? (
+          <p className="auth-feedback error">{fieldErrors.documento}</p>
+        ) : null}
 
         <label className="auth-label" htmlFor="register-email">
           Correo
@@ -1663,28 +1704,14 @@ function RegisterForm({ onRegister }) {
           type="email"
           placeholder="nombre@correo.com"
           value={formData.email}
-          onChange={(event) =>
-            setFormData((current) => ({ ...current, email: event.target.value }))
-          }
+          onChange={(event) => handleChange('email', event.target.value)}
+          onBlur={() => handleBlur('email')}
+          aria-invalid={fieldErrors.email ? 'true' : 'false'}
           required
         />
-
-        <label className="auth-label" htmlFor="register-age">
-          Edad
-        </label>
-        <input
-          id="register-age"
-          className="auth-input"
-          type="number"
-          min="14"
-          max="99"
-          placeholder="Ej. 21"
-          value={formData.age}
-          onChange={(event) =>
-            setFormData((current) => ({ ...current, age: event.target.value }))
-          }
-          required
-        />
+        {fieldErrors.email ? (
+          <p className="auth-feedback error">{fieldErrors.email}</p>
+        ) : null}
 
         <label className="auth-label" htmlFor="register-program">
           Carrera
@@ -1715,6 +1742,9 @@ function RegisterForm({ onRegister }) {
           }
           required
         />
+        {fieldErrors.password ? (
+          <p className="auth-feedback error">{fieldErrors.password}</p>
+        ) : null}
 
         {feedback ? (
           <p className={`auth-feedback ${feedback.ok ? 'success' : 'error'}`}>
@@ -1722,8 +1752,8 @@ function RegisterForm({ onRegister }) {
           </p>
         ) : null}
 
-        <button className="auth-button" type="submit">
-          Registrarme e iniciar sesion
+        <button className="auth-button" type="submit" disabled={submitting}>
+          {submitting ? 'Creando cuenta…' : 'Registrarme e iniciar sesion'}
         </button>
       </form>
 
@@ -1737,32 +1767,35 @@ function RegisterForm({ onRegister }) {
 function ForgotPasswordForm({ onRecover }) {
   const [email, setEmail] = useState('')
   const [feedback, setFeedback] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    setFeedback(onRecover(email))
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      setFeedback(await onRecover(email))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
-    <AuthLayout
-      eyebrow="Recuperacion"
-      title="Recupera el acceso"
-      description="El flujo sigue siendo basico, pero ahora valida la cuenta segun el rol registrado."
-    >
+    <AuthLayout eyebrow="Recuperacion">
       <div className="auth-form-header">
         <h2>Olvide mi contrasena</h2>
         <p>Ingresa tu correo para confirmar que existe en el sistema local.</p>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>
-        <label className="auth-label" htmlFor="forgot-email">
-          Correo registrado
+        <label className="auth-label" htmlFor="forgot-identifier">
+          Correo o documento registrado
         </label>
         <input
-          id="forgot-email"
+          id="forgot-identifier"
           className="auth-input"
-          type="email"
-          placeholder="nombre@correo.com"
+          type="text"
+          placeholder="nombre@correo.com o numero de documento"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
@@ -1774,8 +1807,8 @@ function ForgotPasswordForm({ onRecover }) {
           </p>
         ) : null}
 
-        <button className="auth-button" type="submit">
-          Validar correo
+        <button className="auth-button" type="submit" disabled={submitting}>
+          {submitting ? 'Validando…' : 'Validar usuario'}
         </button>
       </form>
 
@@ -2468,13 +2501,7 @@ function HomePage({ user, onLogout, onProfileUpdate }) {
 }
 
 function App() {
-  const [users, setUsers] = useState(loadUsers)
   const [session, setSession] = useState(loadSession)
-  const effectiveUsers = mergeUsers(users)
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(effectiveUsers))
-  }, [effectiveUsers])
 
   useEffect(() => {
     if (session) {
@@ -2485,102 +2512,84 @@ function App() {
     window.localStorage.removeItem(STORAGE_SESSION_KEY)
   }, [session])
 
-  function handleLogin({ email, password }) {
-    const normalizedEmail = email.trim().toLowerCase()
-    const matchedUser = effectiveUsers.find((user) => user.email === normalizedEmail)
-
-    if (!matchedUser) {
-      return {
-        ok: false,
-        message: 'No existe una cuenta registrada con ese correo.',
+  // Al montar, si hay token vigente, refresca la sesion desde /auth/me.
+  // Si el token expiró o es inválido, limpia la sesion local.
+  useEffect(() => {
+    let cancelled = false
+    apiMe().then((result) => {
+      if (cancelled) return
+      if (result.ok && result.user) {
+        setSession(normalizeUser(result.user))
+      } else if (result.status === 401) {
+        apiLogout()
+        setSession(null)
       }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleLogin({ identifier, password }) {
+    const result = await apiLogin({ identifier, password })
+
+    if (!result.ok) {
+      return { ok: false, message: result.message || 'No se pudo iniciar sesion.' }
     }
 
-    if (matchedUser.password !== password) {
-      return {
-        ok: false,
-        message: 'La contrasena es incorrecta.',
-      }
-    }
+    const normalized = normalizeUser(result.user)
+    setSession(normalized)
 
-    setSession(sanitizeUser(matchedUser))
-
-    return {
-      ok: true,
-      message: `Acceso correcto como ${ROLE_CONFIG[matchedUser.role].label.toLowerCase()}.`,
-    }
+    const roleLabel = ROLE_CONFIG[normalized.role]?.label?.toLowerCase() || normalized.role
+    return { ok: true, message: `Acceso correcto como ${roleLabel}.` }
   }
 
-  function handleRegister({ username, email, age, password, program }) {
-    const normalizedEmail = email.trim().toLowerCase()
-
-    if (!username.trim() || !normalizedEmail || !age.trim() || !password.trim()) {
-      return {
-        ok: false,
-        message: 'Todos los campos son obligatorios.',
-      }
+  async function handleRegister({ username, documento, email, password, program }) {
+    if (
+      !username?.trim() ||
+      !documento?.toString().trim() ||
+      !email?.trim() ||
+      !password?.trim()
+    ) {
+      return { ok: false, message: 'Todos los campos son obligatorios.' }
     }
-
-    if (effectiveUsers.some((user) => user.email === normalizedEmail)) {
-      return {
-        ok: false,
-        message: 'Ese correo ya esta registrado.',
-      }
-    }
-
     if (password.trim().length < 6) {
-      return {
-        ok: false,
-        message: 'La contrasena debe tener al menos 6 caracteres.',
-      }
+      return { ok: false, message: 'La contrasena debe tener al menos 6 caracteres.' }
     }
 
-    const studentPrefix = program === 'industrial' ? 'IND' : 'SIS'
-    const newStudentId = `${studentPrefix}-${Date.now()}`
-    const newUser = normalizeUser({
+    const result = await apiRegister({
       username: username.trim(),
-      email: normalizedEmail,
-      age: age.trim(),
+      documento: documento.toString().trim(),
+      email: email.trim().toLowerCase(),
       password: password.trim(),
-      role: 'estudiante',
       program,
-      studentRecordId: newStudentId,
-      semester: '8',
-      studyHours: '12',
-      englishLevel: 'B1',
     })
 
-    setUsers([...effectiveUsers, newUser])
-    setSession(sanitizeUser(newUser))
-
-    return {
-      ok: true,
-      message: 'Registro completado como estudiante. Sesion iniciada.',
+    if (!result.ok) {
+      return { ok: false, message: result.message || 'No se pudo completar el registro.' }
     }
+
+    setSession(normalizeUser(result.user))
+    return { ok: true, message: 'Registro completado como estudiante. Sesion iniciada.' }
   }
 
-  function handleRecover(email) {
-    const normalizedEmail = email.trim().toLowerCase()
-    const matchedUser = effectiveUsers.find((user) => user.email === normalizedEmail)
-
-    if (!matchedUser) {
+  async function handleRecover(identifier) {
+    const result = await apiRecover(identifier.trim())
+    if (!result.ok) {
       return {
         ok: false,
-        message: 'No encontramos una cuenta con ese correo.',
+        message: result.message || 'No encontramos una cuenta con ese usuario.',
       }
     }
-
-    return {
-      ok: true,
-      message: `Correo validado. La cuenta pertenece al rol ${ROLE_CONFIG[matchedUser.role].label.toLowerCase()}.`,
-    }
+    return { ok: true, message: result.message }
   }
 
   function handleLogout() {
+    apiLogout()
     setSession(null)
   }
 
-  function handleProfileUpdate(data) {
+  async function handleProfileUpdate(data) {
     if (!session || session.role !== 'estudiante') {
       return {
         ok: false,
@@ -2588,22 +2597,20 @@ function App() {
       }
     }
 
-    const updatedUser = sanitizeUser({
-      ...session,
-      ...data,
+    const result = await apiUpdateProfile({
+      age: data.age,
+      semester: data.semester,
+      studyHours: data.studyHours,
+      englishLevel: data.englishLevel,
+      program: data.program,
     })
 
-    setUsers((currentUsers) =>
-      currentUsers.map((user) =>
-        user.email === session.email ? { ...user, ...updatedUser } : user,
-      ),
-    )
-    setSession(updatedUser)
-
-    return {
-      ok: true,
-      message: 'Tus datos personales fueron actualizados.',
+    if (!result.ok) {
+      return { ok: false, message: result.message || 'No se pudo guardar el perfil.' }
     }
+
+    setSession(normalizeUser(result.user))
+    return { ok: true, message: 'Tus datos personales fueron actualizados.' }
   }
 
   return (
