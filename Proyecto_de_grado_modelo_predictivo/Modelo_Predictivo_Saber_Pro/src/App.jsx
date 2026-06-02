@@ -8,11 +8,17 @@ import {
 } from 'react-router-dom'
 import './App.css'
 import {
+  apiChangeMyPassword,
+  apiGetCohort,
+  apiGetStudentPredictions,
+  apiGetStudentProfile,
   apiLogin,
   apiLogout,
   apiMe,
   apiRecover,
   apiRegister,
+  apiSaveStudentProfile,
+  apiUpdateMe,
   apiUpdateProfile,
 } from './api.js'
 
@@ -1546,8 +1552,9 @@ function LoginForm({ onLogin }) {
 
 // Validaciones del formulario de registro (espejo de las del backend).
 const REGISTER_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+// Permite puntos solo como abreviacion (Dr., Prof.).
 const REGISTER_NAME_RE =
-  /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/
+  /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?)*$/
 const REGISTER_DOC_RE = /^\d{5,15}$/
 
 function validateRegisterName(name) {
@@ -1819,9 +1826,266 @@ function ForgotPasswordForm({ onRecover }) {
   )
 }
 
+function AccountSettingsModal({ user, onClose, onUserUpdated }) {
+  const [name, setName] = useState(user.username)
+  const [documento, setDocumento] = useState(user.documento || '')
+  const [identityFeedback, setIdentityFeedback] = useState(null)
+  const [savingIdentity, setSavingIdentity] = useState(false)
+
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' })
+  const [pwFeedback, setPwFeedback] = useState(null)
+  const [savingPw, setSavingPw] = useState(false)
+
+  async function handleSaveIdentity(event) {
+    event.preventDefault()
+    if (savingIdentity) return
+    setIdentityFeedback(null)
+
+    const trimmedName = name.trim()
+    const trimmedDoc = documento.toString().trim()
+
+    if (trimmedName.length < 3) {
+      setIdentityFeedback({
+        ok: false,
+        message: 'El nombre debe tener al menos 3 caracteres.',
+      })
+      return
+    }
+    if (
+      !/^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?)*$/.test(trimmedName)
+    ) {
+      setIdentityFeedback({
+        ok: false,
+        message: 'El nombre solo puede contener letras y espacios.',
+      })
+      return
+    }
+    if (!/^\d{5,15}$/.test(trimmedDoc)) {
+      setIdentityFeedback({
+        ok: false,
+        message: 'El documento debe contener entre 5 y 15 digitos numericos.',
+      })
+      return
+    }
+    if (trimmedName === user.username && trimmedDoc === (user.documento || '')) {
+      setIdentityFeedback({ ok: false, message: 'No hay cambios para guardar.' })
+      return
+    }
+
+    const payload = {}
+    if (trimmedName !== user.username) payload.username = trimmedName
+    if (trimmedDoc !== (user.documento || '')) payload.documento = trimmedDoc
+
+    setSavingIdentity(true)
+    try {
+      const result = await apiUpdateMe(payload)
+      if (!result.ok) {
+        setIdentityFeedback({
+          ok: false,
+          message: result.message || 'No se pudo actualizar.',
+        })
+        return
+      }
+      setIdentityFeedback({ ok: true, message: 'Cuenta actualizada.' })
+      onUserUpdated?.(result.user)
+    } finally {
+      setSavingIdentity(false)
+    }
+  }
+
+  async function handleChangePassword(event) {
+    event.preventDefault()
+    if (savingPw) return
+    setPwFeedback(null)
+    if (!pwForm.currentPassword || !pwForm.newPassword) {
+      setPwFeedback({ ok: false, message: 'Completa los campos de contrasena.' })
+      return
+    }
+    if (pwForm.newPassword.length < 6) {
+      setPwFeedback({
+        ok: false,
+        message: 'La nueva contrasena debe tener al menos 6 caracteres.',
+      })
+      return
+    }
+    if (pwForm.newPassword !== pwForm.confirm) {
+      setPwFeedback({
+        ok: false,
+        message: 'La confirmacion no coincide con la nueva contrasena.',
+      })
+      return
+    }
+    if (pwForm.newPassword === pwForm.currentPassword) {
+      setPwFeedback({
+        ok: false,
+        message: 'La nueva contrasena debe ser distinta a la actual.',
+      })
+      return
+    }
+
+    setSavingPw(true)
+    try {
+      const res = await apiChangeMyPassword({
+        currentPassword: pwForm.currentPassword,
+        newPassword: pwForm.newPassword,
+      })
+      if (!res.ok) {
+        setPwFeedback({ ok: false, message: res.message || 'No se pudo cambiar.' })
+        return
+      }
+      setPwFeedback({ ok: true, message: 'Contrasena actualizada.' })
+      setPwForm({ currentPassword: '', newPassword: '', confirm: '' })
+    } finally {
+      setSavingPw(false)
+    }
+  }
+
+  return (
+    <div className="account-modal-backdrop" onClick={onClose}>
+      <div className="account-modal" onClick={(e) => e.stopPropagation()}>
+        <header className="account-modal-header">
+          <div>
+            <p className="banner-kicker">Mi cuenta</p>
+            <h2>Configuracion de la cuenta</h2>
+          </div>
+          <button
+            type="button"
+            className="account-modal-close"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        </header>
+
+        <section className="account-section">
+          <h3>Datos de tu cuenta</h3>
+          <div className="account-info">
+            <div>
+              <span>Correo</span>
+              <strong>{user.email}</strong>
+            </div>
+            <div>
+              <span>Documento actual</span>
+              <strong>{user.documento || '—'}</strong>
+            </div>
+            <div>
+              <span>Rol</span>
+              <strong>{ROLE_CONFIG[user.role]?.label || user.role}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section className="account-section">
+          <h3>Editar nombre y documento de identidad</h3>
+          <p className="student-interpretation" style={{ margin: 0 }}>
+            Despues de cambiar el documento podras iniciar sesion con el nuevo
+            valor (o tu correo).
+          </p>
+          <form className="profile-form" onSubmit={handleSaveIdentity}>
+            <label className="auth-label" htmlFor="account-name">
+              Nombre completo
+            </label>
+            <input
+              id="account-name"
+              className="auth-input"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+
+            <label className="auth-label" htmlFor="account-doc">
+              Documento de identidad
+            </label>
+            <input
+              id="account-doc"
+              className="auth-input"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={documento}
+              onChange={(e) => setDocumento(e.target.value.replace(/\D/g, ''))}
+              maxLength="15"
+              required
+            />
+
+            {identityFeedback ? (
+              <p className={`auth-feedback ${identityFeedback.ok ? 'success' : 'error'}`}>
+                {identityFeedback.message}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <button className="auth-button" type="submit" disabled={savingIdentity}>
+                {savingIdentity ? 'Guardando…' : 'Actualizar mis datos'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="account-section">
+          <h3>Cambiar contrasena</h3>
+          <form className="profile-form" onSubmit={handleChangePassword}>
+            <label className="auth-label" htmlFor="pw-current">
+              Contrasena actual
+            </label>
+            <input
+              id="pw-current"
+              className="auth-input"
+              type="password"
+              value={pwForm.currentPassword}
+              onChange={(e) =>
+                setPwForm((c) => ({ ...c, currentPassword: e.target.value }))
+              }
+              required
+            />
+            <label className="auth-label" htmlFor="pw-new">
+              Nueva contrasena
+            </label>
+            <input
+              id="pw-new"
+              className="auth-input"
+              type="password"
+              value={pwForm.newPassword}
+              onChange={(e) =>
+                setPwForm((c) => ({ ...c, newPassword: e.target.value }))
+              }
+              minLength="6"
+              required
+            />
+            <label className="auth-label" htmlFor="pw-confirm">
+              Confirmar nueva contrasena
+            </label>
+            <input
+              id="pw-confirm"
+              className="auth-input"
+              type="password"
+              value={pwForm.confirm}
+              onChange={(e) => setPwForm((c) => ({ ...c, confirm: e.target.value }))}
+              minLength="6"
+              required
+            />
+            {pwFeedback ? (
+              <p className={`auth-feedback ${pwFeedback.ok ? 'success' : 'error'}`}>
+                {pwFeedback.message}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <button className="auth-button" type="submit" disabled={savingPw}>
+                {savingPw ? 'Cambiando…' : 'Cambiar contrasena'}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  )
+}
+
 function DashboardShell({
   user,
   onLogout,
+  onUserUpdated,
   children,
   searchPlaceholder = 'Buscar estudiante...',
   topbarControls = null,
@@ -1830,6 +2094,7 @@ function DashboardShell({
 }) {
   const navigate = useNavigate()
   const roleSettings = ROLE_CONFIG[user.role] || ROLE_CONFIG.estudiante
+  const [accountOpen, setAccountOpen] = useState(false)
 
   function handleLogout() {
     onLogout()
@@ -1851,6 +2116,14 @@ function DashboardShell({
             </div>
           ) : null}
           {topbarControls}
+          <button
+            className="logout-button account-button"
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            title="Configurar mi cuenta"
+          >
+            ⚙ Mi cuenta
+          </button>
           <button className="logout-button" type="button" onClick={handleLogout}>
             Cerrar sesion
           </button>
@@ -1878,7 +2151,7 @@ function DashboardShell({
           ))}
         </nav>
 
-        <div className="user-card">
+        <div className="user-card" onClick={() => setAccountOpen(true)} role="button" tabIndex={0}>
           <div className="user-avatar">{roleSettings.icon}</div>
           <div>
             <div className="user-name">{user.username}</div>
@@ -1893,6 +2166,14 @@ function DashboardShell({
       <main className="main-panel">
         <div className="content-area">{children}</div>
       </main>
+
+      {accountOpen ? (
+        <AccountSettingsModal
+          user={user}
+          onClose={() => setAccountOpen(false)}
+          onUserUpdated={(u) => onUserUpdated?.(u)}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1912,7 +2193,187 @@ function MetricsGrid({ user, records, selectedProgram }) {
   )
 }
 
-function RectorView({ user, onLogout }) {
+function CohortPanel({ user, allowProgramFilter = false }) {
+  const [program, setProgram] = useState(
+    user.program === 'all' ? 'all' : user.program,
+  )
+  const [data, setData] = useState({
+    status: 'loading',
+    students: [],
+    metrics: null,
+    program: program,
+  })
+
+  useEffect(() => {
+    let alive = true
+    setData((s) => ({ ...s, status: 'loading' }))
+    apiGetCohort(allowProgramFilter ? program : undefined).then((res) => {
+      if (!alive) return
+      if (!res.ok) {
+        setData({
+          status: 'error',
+          students: [],
+          metrics: null,
+          program,
+          error: res.message,
+        })
+        return
+      }
+      setData({
+        status: 'ready',
+        students: res.students || [],
+        metrics: res.metrics || null,
+        program: res.program || program,
+      })
+    })
+    return () => {
+      alive = false
+    }
+  }, [program, allowProgramFilter])
+
+  const programLabel =
+    data.program === 'all'
+      ? 'todas las ingenierias'
+      : getProgramLabel(data.program)
+
+  return (
+    <section className="card" style={{ padding: '20px 24px' }}>
+      <div className="cohort-toolbar">
+        <div>
+          <p className="banner-kicker">Datos reales</p>
+          <h2 style={{ margin: '4px 0 0' }}>Cohorte de estudiantes</h2>
+          <p
+            className="student-interpretation"
+            style={{ margin: '6px 0 0', maxWidth: 720 }}
+          >
+            Listado en vivo de estudiantes registrados en el sistema y su
+            prediccion mas reciente para {programLabel}.
+          </p>
+        </div>
+        {allowProgramFilter ? (
+          <div className="filter-group">
+            <label htmlFor="cohort-program" className="auth-label" style={{ margin: 0 }}>
+              Programa
+            </label>
+            <select
+              id="cohort-program"
+              className="auth-input auth-select"
+              value={program}
+              onChange={(e) => setProgram(e.target.value)}
+            >
+              <option value="all">Ambas ingenierias</option>
+              <option value="sistemas">Ingenieria de Sistemas</option>
+              <option value="industrial">Ingenieria Industrial</option>
+            </select>
+          </div>
+        ) : null}
+      </div>
+
+      {data.status === 'loading' ? (
+        <p className="student-interpretation">Cargando…</p>
+      ) : data.status === 'error' ? (
+        <p className="auth-feedback error">{data.error || 'No se pudo cargar la cohorte.'}</p>
+      ) : (
+        <>
+          {data.metrics ? (
+            <div className="cohort-metrics-grid">
+              <div className="cohort-metric-card">
+                <span className="label">Total estudiantes</span>
+                <span className="value">{data.metrics.totalEstudiantes}</span>
+                <span className="hint">en el alcance seleccionado</span>
+              </div>
+              <div className="cohort-metric-card">
+                <span className="label">Con perfil completo</span>
+                <span className="value">{data.metrics.conPerfil}</span>
+                <span className="hint">han llenado su onboarding</span>
+              </div>
+              <div className="cohort-metric-card">
+                <span className="label">Puntaje promedio</span>
+                <span className="value">
+                  {data.metrics.promedioPuntaje ?? '—'}
+                </span>
+                <span className="hint">prediccion del modelo</span>
+              </div>
+              <div className="cohort-metric-card">
+                <span className="label">Distribucion por clase</span>
+                <div className="cohort-distribution">
+                  <span className="chip alto">Alto · {data.metrics.distribucion.alto}</span>
+                  <span className="chip medio">Medio · {data.metrics.distribucion.medio}</span>
+                  <span className="chip bajo">Bajo · {data.metrics.distribucion.bajo}</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {data.students.length === 0 ? (
+            <p className="student-interpretation">
+              Aun no hay estudiantes registrados en este alcance.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="cohort-table">
+                <thead>
+                  <tr>
+                    <th>Estudiante</th>
+                    <th>Documento</th>
+                    <th>Programa</th>
+                    <th>Semestre</th>
+                    <th>Puntaje</th>
+                    <th>Clase</th>
+                    <th>Confianza</th>
+                    <th>Asistencia</th>
+                    <th>Ingles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.students.map((s) => (
+                    <tr key={s.id} className={s.completed ? '' : 'pending'}>
+                      <td>
+                        <strong>{s.username}</strong>
+                        <br />
+                        <small>{s.email}</small>
+                      </td>
+                      <td>{s.documento}</td>
+                      <td>{getProgramLabel(s.program)}</td>
+                      <td>{s.semestre ?? '—'}</td>
+                      <td>{s.puntajeEstimado ?? '—'}</td>
+                      <td>
+                        {s.clase ? (
+                          <span
+                            className={`risk-pill ${
+                              s.clase === 'alto'
+                                ? 'bajo'
+                                : s.clase === 'bajo'
+                                  ? 'alto'
+                                  : 'medio'
+                            }`}
+                          >
+                            {s.clase}
+                          </span>
+                        ) : (
+                          'sin prediccion'
+                        )}
+                      </td>
+                      <td>
+                        {s.probabilidad
+                          ? `${Math.round(s.probabilidad * 100)}%`
+                          : '—'}
+                      </td>
+                      <td>{s.asistencia ? `${s.asistencia}%` : '—'}</td>
+                      <td>{s.nivelIngles ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function RectorView({ user, onLogout, onUserUpdated }) {
   const [selectedProgram, setSelectedProgram] = useState('all')
   const records = getScopedStudents(user, selectedProgram)
   const summaries = ['sistemas', 'industrial'].map(buildProgramSummary)
@@ -1938,9 +2399,12 @@ function RectorView({ user, onLogout }) {
     <DashboardShell
       user={user}
       onLogout={onLogout}
+      onUserUpdated={onUserUpdated}
       searchPlaceholder="Buscar programa o estudiante..."
       topbarControls={topbarControls}
     >
+      <CohortPanel user={user} allowProgramFilter={true} />
+
       <section className="welcome-banner card">
         <div>
           <p className="banner-kicker">Vision institucional</p>
@@ -2009,7 +2473,7 @@ function RectorView({ user, onLogout }) {
   )
 }
 
-function DeanView({ user, onLogout }) {
+function DeanView({ user, onLogout, onUserUpdated }) {
   const [selectedProgram, setSelectedProgram] = useState(user.program || 'sistemas')
   const records = getScopedStudents(user, selectedProgram)
   const sortedRecords = records.slice().sort((left, right) => right.predictedScore - left.predictedScore)
@@ -2028,7 +2492,9 @@ function DeanView({ user, onLogout }) {
   )
 
   return (
-    <DashboardShell user={user} onLogout={onLogout} topbarControls={topbarControls}>
+    <DashboardShell user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} topbarControls={topbarControls}>
+      <CohortPanel user={user} />
+
       <section className="welcome-banner card">
         <div>
           <p className="banner-kicker">Vista del decano</p>
@@ -2101,7 +2567,7 @@ function DeanView({ user, onLogout }) {
   )
 }
 
-function ProfessorView({ user, onLogout }) {
+function ProfessorView({ user, onLogout, onUserUpdated }) {
   const [selectedProgram, setSelectedProgram] = useState(user.program || 'sistemas')
   const [activeSectionIndex, setActiveSectionIndex] = useState(0)
   const professorSections = ROLE_CONFIG.profesor.nav
@@ -2138,10 +2604,13 @@ function ProfessorView({ user, onLogout }) {
     <DashboardShell
       user={user}
       onLogout={onLogout}
+      onUserUpdated={onUserUpdated}
       topbarControls={topbarControls}
       activeNavIndex={activeSectionIndex}
       onNavSelect={setActiveSectionIndex}
     >
+      <CohortPanel user={user} />
+
       <section className="card student-section-state">
         <div>
           <p className="banner-kicker">Seccion activa</p>
@@ -2204,300 +2673,721 @@ function ProfessorView({ user, onLogout }) {
   )
 }
 
-function StudentView({ user, onLogout, onProfileUpdate }) {
-  const studentRecord = getStudentRecordForUser(user)
-  const studentSections = ROLE_CONFIG.estudiante.nav
-  const resolvedStudentData = {
-    predictedScore: Number(withFallback(studentRecord.predictedScore, STUDENT_DASHBOARD_MOCK.predictedScore)),
-    actualScore: Number(withFallback(studentRecord.actualScore, STUDENT_DASHBOARD_MOCK.actualScore)),
-    risk: withFallback(studentRecord.risk, STUDENT_DASHBOARD_MOCK.risk),
-    studyHours: Number(withFallback(studentRecord.studyHours, STUDENT_DASHBOARD_MOCK.studyHours)),
-    trend: withFallback(studentRecord.trend, STUDENT_DASHBOARD_MOCK.trend),
-    strengths: withFallback(studentRecord.strengths, STUDENT_DASHBOARD_MOCK.strengths),
-    recommendation: withFallback(studentRecord.recommendation, STUDENT_DASHBOARD_MOCK.recommendation),
+function riskFromClase(clase) {
+  if (clase === 'alto') return 'bajo'
+  if (clase === 'bajo') return 'alto'
+  return 'medio'
+}
+
+const RISK_LABEL_FROM_CLASE = {
+  alto: 'Riesgo bajo',
+  medio: 'Riesgo medio',
+  bajo: 'Riesgo alto',
+}
+
+const EMPTY_PROFILE_FORM = {
+  promedio_acumulado: '',
+  promedio_basicas: '',
+  promedio_ingenieria: '',
+  num_reprobadas: '',
+  pct_creditos: '',
+  semestre: '',
+  estrato: '',
+  acceso_internet: false,
+  acceso_pc: false,
+  trabaja: false,
+  genero: '',
+  edad: '',
+  ciudad: '',
+  horas_estudio_semana: '',
+  nivel_ingles: 'B1',
+  simulacros_realizados: '',
+  asistencia_pct: '',
+}
+
+function profileToForm(profile) {
+  if (!profile) return EMPTY_PROFILE_FORM
+  return {
+    promedio_acumulado: profile.promedio_acumulado ?? '',
+    promedio_basicas: profile.promedio_basicas ?? '',
+    promedio_ingenieria: profile.promedio_ingenieria ?? '',
+    num_reprobadas: profile.num_reprobadas ?? '',
+    pct_creditos: profile.pct_creditos ?? '',
+    semestre: profile.semestre ?? '',
+    estrato: profile.estrato ?? '',
+    acceso_internet: !!profile.acceso_internet,
+    acceso_pc: !!profile.acceso_pc,
+    trabaja: !!profile.trabaja,
+    genero: profile.genero ?? '',
+    edad: profile.edad ?? '',
+    ciudad: profile.ciudad ?? '',
+    horas_estudio_semana: profile.horas_estudio_semana ?? '',
+    nivel_ingles: profile.nivel_ingles ?? 'B1',
+    simulacros_realizados: profile.simulacros_realizados ?? '',
+    asistencia_pct: profile.asistencia_pct ?? '',
   }
-  const analysisText = buildStudentAutomaticAnalysis(
-    resolvedStudentData,
-    STUDENT_DASHBOARD_MOCK.performanceAreas,
+}
+
+function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) {
+  const [form, setForm] = useState(initialValues || EMPTY_PROFILE_FORM)
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    const payload = {
+      promedio_acumulado: form.promedio_acumulado === '' ? null : Number(form.promedio_acumulado),
+      promedio_basicas: form.promedio_basicas === '' ? null : Number(form.promedio_basicas),
+      promedio_ingenieria:
+        form.promedio_ingenieria === '' ? null : Number(form.promedio_ingenieria),
+      num_reprobadas: form.num_reprobadas === '' ? null : Number(form.num_reprobadas),
+      pct_creditos: form.pct_creditos === '' ? null : Number(form.pct_creditos),
+      semestre: form.semestre === '' ? null : Number(form.semestre),
+      estrato: form.estrato === '' ? null : Number(form.estrato),
+      acceso_internet: !!form.acceso_internet,
+      acceso_pc: !!form.acceso_pc,
+      trabaja: !!form.trabaja,
+      genero: form.genero || null,
+      edad: form.edad === '' ? null : Number(form.edad),
+      ciudad: form.ciudad?.trim() || null,
+      horas_estudio_semana:
+        form.horas_estudio_semana === '' ? null : Number(form.horas_estudio_semana),
+      nivel_ingles: form.nivel_ingles || null,
+      simulacros_realizados:
+        form.simulacros_realizados === '' ? null : Number(form.simulacros_realizados),
+      asistencia_pct: form.asistencia_pct === '' ? null : Number(form.asistencia_pct),
+    }
+    onSubmit(payload)
+  }
+
+  return (
+    <form className="profile-form" onSubmit={handleSubmit}>
+      <h3 className="form-group-title">Desempeno academico</h3>
+      <div className="form-grid-2">
+        <label className="form-field">
+          <span>Promedio acumulado (0–5)</span>
+          <input
+            className="auth-input"
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            value={form.promedio_acumulado}
+            onChange={(e) => update('promedio_acumulado', e.target.value)}
+            required
+          />
+        </label>
+        <label className="form-field">
+          <span>Promedio en materias basicas</span>
+          <input
+            className="auth-input"
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            value={form.promedio_basicas}
+            onChange={(e) => update('promedio_basicas', e.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Promedio en ingenieria</span>
+          <input
+            className="auth-input"
+            type="number"
+            step="0.01"
+            min="0"
+            max="5"
+            value={form.promedio_ingenieria}
+            onChange={(e) => update('promedio_ingenieria', e.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Materias reprobadas</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="0"
+            max="30"
+            value={form.num_reprobadas}
+            onChange={(e) => update('num_reprobadas', e.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>% de creditos aprobados</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="0"
+            max="100"
+            value={form.pct_creditos}
+            onChange={(e) => update('pct_creditos', e.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Semestre actual</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="1"
+            max="12"
+            value={form.semestre}
+            onChange={(e) => update('semestre', e.target.value)}
+            required
+          />
+        </label>
+      </div>
+
+      <h3 className="form-group-title">Contexto socioeconomico</h3>
+      <div className="form-grid-2">
+        <label className="form-field">
+          <span>Estrato socioeconomico</span>
+          <select
+            className="auth-input auth-select"
+            value={form.estrato}
+            onChange={(e) => update('estrato', e.target.value)}
+            required
+          >
+            <option value="">Seleccionar…</option>
+            {[1, 2, 3, 4, 5, 6].map((e) => (
+              <option key={e} value={e}>{e}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field checkbox-field">
+          <input
+            type="checkbox"
+            checked={!!form.acceso_internet}
+            onChange={(e) => update('acceso_internet', e.target.checked)}
+          />
+          <span>Tengo internet en casa</span>
+        </label>
+        <label className="form-field checkbox-field">
+          <input
+            type="checkbox"
+            checked={!!form.acceso_pc}
+            onChange={(e) => update('acceso_pc', e.target.checked)}
+          />
+          <span>Tengo computador/laptop propio</span>
+        </label>
+        <label className="form-field checkbox-field">
+          <input
+            type="checkbox"
+            checked={!!form.trabaja}
+            onChange={(e) => update('trabaja', e.target.checked)}
+          />
+          <span>Estudio y trabajo</span>
+        </label>
+      </div>
+
+      <h3 className="form-group-title">Datos demograficos</h3>
+      <div className="form-grid-2">
+        <label className="form-field">
+          <span>Genero</span>
+          <select
+            className="auth-input auth-select"
+            value={form.genero}
+            onChange={(e) => update('genero', e.target.value)}
+          >
+            <option value="">Prefiero no decir</option>
+            <option value="M">Masculino</option>
+            <option value="F">Femenino</option>
+            <option value="O">Otro</option>
+          </select>
+        </label>
+        <label className="form-field">
+          <span>Edad</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="14"
+            max="80"
+            value={form.edad}
+            onChange={(e) => update('edad', e.target.value)}
+          />
+        </label>
+        <label className="form-field" style={{ gridColumn: '1 / -1' }}>
+          <span>Ciudad de residencia</span>
+          <input
+            className="auth-input"
+            type="text"
+            maxLength="60"
+            value={form.ciudad}
+            onChange={(e) => update('ciudad', e.target.value)}
+          />
+        </label>
+      </div>
+
+      <h3 className="form-group-title">Habitos de estudio</h3>
+      <div className="form-grid-2">
+        <label className="form-field">
+          <span>Horas de estudio por semana</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="0"
+            max="80"
+            value={form.horas_estudio_semana}
+            onChange={(e) => update('horas_estudio_semana', e.target.value)}
+            required
+          />
+        </label>
+        <label className="form-field">
+          <span>Nivel de ingles</span>
+          <select
+            className="auth-input auth-select"
+            value={form.nivel_ingles}
+            onChange={(e) => update('nivel_ingles', e.target.value)}
+          >
+            {['A1', 'A2', 'B1', 'B2', 'C1', 'C2'].map((lv) => (
+              <option key={lv} value={lv}>{lv}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>Simulacros Saber Pro realizados</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="0"
+            max="50"
+            value={form.simulacros_realizados}
+            onChange={(e) => update('simulacros_realizados', e.target.value)}
+          />
+        </label>
+        <label className="form-field">
+          <span>Asistencia a clases (%)</span>
+          <input
+            className="auth-input"
+            type="number"
+            min="0"
+            max="100"
+            value={form.asistencia_pct}
+            onChange={(e) => update('asistencia_pct', e.target.value)}
+          />
+        </label>
+      </div>
+
+      {error ? <p className="auth-feedback error">{error}</p> : null}
+
+      <div className="form-actions">
+        {onCancel ? (
+          <button
+            type="button"
+            className="auth-button auth-button-secondary"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            Cancelar
+          </button>
+        ) : null}
+        <button className="auth-button" type="submit" disabled={busy}>
+          {busy ? 'Guardando…' : 'Guardar y calcular prediccion'}
+        </button>
+      </div>
+    </form>
   )
+}
 
-  const [formData, setFormData] = useState({
-    username: user.username,
-    age: user.age,
-    program: user.program,
-    semester: user.semester,
-    studyHours: user.studyHours,
-    englishLevel: user.englishLevel,
-  })
-  const [feedback, setFeedback] = useState(null)
+function StudentOnboarding({ onComplete, initial }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit(payload) {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await apiSaveStudentProfile(payload)
+      if (!result.ok) {
+        setError(result.message || 'No se pudo guardar el perfil.')
+        return
+      }
+      onComplete(result.profile, result.prediction)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="onboarding-wrap card">
+      <div className="onboarding-header">
+        <p className="banner-kicker">Bienvenido</p>
+        <h1>Cuentanos sobre ti para generar tu prediccion</h1>
+        <p className="banner-text">
+          Estos datos alimentan el modelo predictivo del Saber Pro. Con tu informacion
+          academica, socioeconomica, demografica y tus habitos de estudio podremos
+          estimar tu nivel de desempeno (bajo, medio o alto) y entregarte
+          recomendaciones personalizadas. Puedes actualizarlos cuando quieras.
+        </p>
+      </div>
+      <StudentProfileForm
+        initialValues={profileToForm(initial)}
+        onSubmit={handleSubmit}
+        busy={busy}
+        error={error}
+      />
+    </section>
+  )
+}
+
+function StudentView({ user, onLogout, onUserUpdated }) {
+  const studentSections = ROLE_CONFIG.estudiante.nav
   const [activeSectionIndex, setActiveSectionIndex] = useState(0)
+  const [state, setState] = useState({
+    status: 'loading', // 'loading' | 'onboarding' | 'ready'
+    profile: null,
+    prediction: null,
+    predictions: [],
+  })
+  const [editing, setEditing] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    let alive = true
+    Promise.all([apiGetStudentProfile(), apiGetStudentPredictions()]).then(
+      ([profileRes, predRes]) => {
+        if (!alive) return
+        const profile = profileRes.ok ? profileRes.profile : null
+        const prediction = profileRes.ok ? profileRes.prediction : null
+        const predictions = predRes.ok ? predRes.predictions || [] : []
+        setState({
+          status: profile?.completed ? 'ready' : 'onboarding',
+          profile,
+          prediction,
+          predictions,
+        })
+      },
+    )
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  function handleCompleteOnboarding(profile, prediction) {
+    setState({
+      status: 'ready',
+      profile,
+      prediction,
+      predictions: [prediction, ...(state.predictions || [])],
+    })
+  }
+
+  async function handleSaveUpdate(payload) {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const result = await apiSaveStudentProfile(payload)
+      if (!result.ok) {
+        setSaveError(result.message || 'No se pudo guardar.')
+        return
+      }
+      setState((s) => ({
+        ...s,
+        profile: result.profile,
+        prediction: result.prediction,
+        predictions: [result.prediction, ...(s.predictions || [])],
+      }))
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (state.status === 'loading') {
+    return (
+      <DashboardShell user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} searchPlaceholder="">
+        <section className="card empty-state">
+          <p>Cargando tu informacion…</p>
+        </section>
+      </DashboardShell>
+    )
+  }
+
+  if (state.status === 'onboarding') {
+    return (
+      <DashboardShell user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} searchPlaceholder="">
+        <StudentOnboarding
+          onComplete={handleCompleteOnboarding}
+          initial={state.profile}
+        />
+      </DashboardShell>
+    )
+  }
+
+  const profile = state.profile
+  const prediction = state.prediction
+  const predictions = state.predictions
   const activeSectionLabel = studentSections[activeSectionIndex] || studentSections[0]
   const isSummarySection = activeSectionIndex === 0
   const isPredictionSection = activeSectionIndex === 1
   const isRecommendationSection = activeSectionIndex === 2
 
-  function handleSubmit(event) {
-    event.preventDefault()
-    const result = onProfileUpdate(formData)
-    setFeedback(result)
+  const riskLevel = prediction ? riskFromClase(prediction.clase) : 'medio'
+  const riskLabel = prediction
+    ? RISK_LABEL_FROM_CLASE[prediction.clase] || 'Riesgo medio'
+    : 'Sin clasificacion'
+
+  const progress = predictions
+    .slice(0, 5)
+    .reverse()
+    .map((p, i) => ({
+      label: `T${i + 1}`,
+      score: p.puntajeEstimado,
+    }))
+
+  if (editing) {
+    return (
+      <DashboardShell user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} searchPlaceholder="">
+        <section className="onboarding-wrap card">
+          <div className="onboarding-header">
+            <p className="banner-kicker">Actualizar mis datos</p>
+            <h1>Edita tu perfil y vuelve a calcular tu prediccion</h1>
+            <p className="banner-text">
+              Cualquier cambio guardado generara una nueva prediccion y quedara
+              registrado en tu historial.
+            </p>
+          </div>
+          <StudentProfileForm
+            initialValues={profileToForm(profile)}
+            onSubmit={handleSaveUpdate}
+            onCancel={() => {
+              setEditing(false)
+              setSaveError(null)
+            }}
+            busy={saving}
+            error={saveError}
+          />
+        </section>
+      </DashboardShell>
+    )
   }
 
   return (
     <DashboardShell
       user={user}
       onLogout={onLogout}
+      onUserUpdated={onUserUpdated}
       searchPlaceholder=""
       activeNavIndex={activeSectionIndex}
       onNavSelect={setActiveSectionIndex}
     >
-        <section className="card student-section-state">
-          <div>
-            <p className="banner-kicker">Seccion activa</p>
-            <h2>{activeSectionLabel}</h2>
-            <p className="student-interpretation">
-              Visualizacion detallada y filtrada segun la seccion seleccionada en el menu lateral.
-            </p>
-          </div>
-        </section>
+      <section className="card student-section-state">
+        <div>
+          <p className="banner-kicker">Seccion activa</p>
+          <h2>{activeSectionLabel}</h2>
+          <p className="student-interpretation">
+            Mostrando tu informacion personalizada calculada por el modelo predictivo
+            con los datos que registraste.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="auth-button auth-button-secondary"
+          onClick={() => setEditing(true)}
+        >
+          Actualizar mis datos
+        </button>
+      </section>
 
-        {isSummarySection ? (
-          <>
-            <section className="welcome-banner card student-banner">
-              <div>
-                <p className="banner-kicker">Vista del estudiante</p>
-                <h1>{roleHomeTitle(user)}</h1>
-                <p className="banner-text">{roleHomeText(user)}</p>
+      {isSummarySection ? (
+        <>
+          <section className="welcome-banner card student-banner">
+            <div>
+              <p className="banner-kicker">Vista del estudiante</p>
+              <h1>Hola, {user.username.split(' ')[0]}</h1>
+              <p className="banner-text">
+                Tu desempeno proyectado en las pruebas Saber Pro y los factores
+                que mas estan influyendo en el resultado.
+              </p>
+            </div>
+            <div className="welcome-chip">
+              <span>{getProgramLabel(profile?.semestre ? user.program : user.program)}</span>
+              <span>Semestre {profile?.semestre ?? '—'}</span>
+            </div>
+          </section>
+
+          <section className="grid-2 content-grid-dashboard student-layout">
+            <article className="card">
+              <div className="section-header">
+                <h2>Mi resultado proyectado</h2>
+                <span className={`risk-pill ${riskLevel}`}>{riskLabel}</span>
               </div>
-              <div className="welcome-chip">
-                <span>{getProgramLabel(studentRecord.program)}</span>
-                <span></span>
+              <div className="student-score-box">
+                <div className="student-score-value">
+                  {prediction?.puntajeEstimado ?? '—'}
+                </div>
+                <div className="student-score-meta">
+                  Puntaje estimado · clase{' '}
+                  <strong>{prediction?.clase ?? '—'}</strong> · confianza{' '}
+                  {prediction
+                    ? `${Math.round((prediction.probabilidad || 0) * 100)}%`
+                    : '—'}
+                </div>
               </div>
-            </section>
-
-            <MetricsGrid user={user} records={[studentRecord]} selectedProgram={user.program} />
-
-            <section className="grid-2 content-grid-dashboard student-layout">
-              <article className="card">
-                <div className="section-header">
-                  <h2>Mi resultado y recomendaciones</h2>
-                  <span className={`risk-pill ${normalizeRiskLevel(resolvedStudentData.risk)}`}>
-                    {getRiskVisualMeta(resolvedStudentData.risk).label}
-                  </span>
+              <div className="student-data-list">
+                <div className="student-data-row">
+                  <span>Promedio acumulado</span>
+                  <strong>{profile?.promedio_acumulado?.toFixed(2) ?? '—'}</strong>
                 </div>
-                <div className="student-score-box">
-                  <div className="student-score-value">{resolvedStudentData.predictedScore}</div>
-                  <div className="student-score-meta">Puntaje predicho actual</div>
+                <div className="student-data-row">
+                  <span>Horas de estudio/semana</span>
+                  <strong>{profile?.horas_estudio_semana ?? '—'}</strong>
                 </div>
-                <div className="student-data-list">
-                  <div className="student-data-row">
-                    <span>Mi resultado real de referencia</span>
-                    <strong>{resolvedStudentData.actualScore}</strong>
-                  </div>
-                  <div className="student-data-row">
-                    <span>Tendencia</span>
-                    <strong>{resolvedStudentData.trend}</strong>
-                  </div>
-                  <div className="student-data-row">
-                    <span>Fortalezas</span>
-                    <strong>{resolvedStudentData.strengths.join(', ')}</strong>
-                  </div>
+                <div className="student-data-row">
+                  <span>Asistencia</span>
+                  <strong>
+                    {profile?.asistencia_pct
+                      ? `${profile.asistencia_pct}%`
+                      : '—'}
+                  </strong>
                 </div>
-                <div className="next-step-box student-note">
-                  <p className="next-step-kicker">Recomendacion personal</p>
-                  <p>{resolvedStudentData.recommendation}</p>
+                <div className="student-data-row">
+                  <span>Nivel de ingles</span>
+                  <strong>{profile?.nivel_ingles ?? '—'}</strong>
                 </div>
-              </article>
+              </div>
+            </article>
 
-              <article className="card">
-                <div className="section-header compact">
-                  <h2>Actualizar mis datos</h2>
+            <article className="card">
+              <div className="section-header compact">
+                <h2>Factores con mayor impacto</h2>
+              </div>
+              <div className="student-data-list">
+                {(prediction?.factores || []).map((f) => (
+                  <div className="student-data-row" key={f.label}>
+                    <span>{f.label}</span>
+                    <strong>
+                      {f.value}
+                      <em
+                        className={`risk-pill ${
+                          f.impact === 'Positivo'
+                            ? 'bajo'
+                            : f.impact === 'A mejorar'
+                              ? 'alto'
+                              : 'medio'
+                        }`}
+                        style={{ marginLeft: 8 }}
+                      >
+                        {f.impact}
+                      </em>
+                    </strong>
+                  </div>
+                ))}
+                {!prediction ? (
+                  <p className="student-interpretation">
+                    Aun no tenemos prediccion. Pulsa "Actualizar mis datos".
+                  </p>
+                ) : null}
+              </div>
+            </article>
+          </section>
+
+          <StudentRiskVisualCard riskLevel={riskLevel} />
+        </>
+      ) : null}
+
+      {isPredictionSection ? (
+        <>
+          <section className="welcome-banner card student-banner">
+            <div>
+              <p className="banner-kicker">Mi prediccion</p>
+              <h1>
+                Clase {prediction?.clase ?? '—'} · {prediction?.puntajeEstimado ?? '—'} puntos
+              </h1>
+              <p className="banner-text">
+                Desglose por areas del modelo, comparacion con la cohorte y
+                evolucion de tus calculos previos.
+              </p>
+            </div>
+          </section>
+          <section className="student-block-grid">
+            <StudentPerformanceAreasCard areas={prediction?.areas || []} />
+            <StudentComparisonCard
+              studentScore={prediction?.puntajeEstimado ?? 0}
+              comparison={{
+                groupLabel: 'Promedio de tu cohorte',
+                groupAverage:
+                  predictions.length > 1
+                    ? Math.round(
+                        predictions.reduce((sum, p) => sum + (p.puntajeEstimado || 0), 0) /
+                          predictions.length,
+                      )
+                    : prediction?.puntajeEstimado ?? 0,
+              }}
+            />
+            <StudentProgressCard
+              progress={
+                progress.length
+                  ? progress
+                  : [
+                      { label: 'T1', score: prediction?.puntajeEstimado ?? 0 },
+                    ]
+              }
+            />
+            <StudentRiskVisualCard riskLevel={riskLevel} />
+          </section>
+        </>
+      ) : null}
+
+      {isRecommendationSection ? (
+        <>
+          <section className="student-block-grid">
+            <StudentRecommendationsCard
+              recommendations={
+                prediction?.recomendaciones || { improve: [], actions: [] }
+              }
+            />
+            <article className="card student-block">
+              <div className="section-header compact">
+                <h2>Interpretacion automatica</h2>
+              </div>
+              <p className="student-interpretation">
+                {prediction
+                  ? `Tu desempeno proyectado se ubica en la clase ${prediction.clase} con un puntaje estimado de ${prediction.puntajeEstimado}. El modelo asigna una confianza del ${Math.round(
+                      (prediction.probabilidad || 0) * 100,
+                    )}% a esta clasificacion.`
+                  : 'Aun no hay prediccion. Llena tu perfil para generar el analisis.'}
+              </p>
+              <div className="student-data-list">
+                <div className="student-data-row">
+                  <span>Materias reprobadas</span>
+                  <strong>{profile?.num_reprobadas ?? '—'}</strong>
                 </div>
-                <form className="profile-form" onSubmit={handleSubmit}>
-                  <label className="auth-label" htmlFor="student-name">
-                    Nombre
-                  </label>
-                  <input
-                    id="student-name"
-                    className="auth-input"
-                    type="text"
-                    value={formData.username}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, username: event.target.value }))
-                    }
-                    required
-                  />
-
-                  <label className="auth-label" htmlFor="student-age">
-                    Edad
-                  </label>
-                  <input
-                    id="student-age"
-                    className="auth-input"
-                    type="number"
-                    min="14"
-                    max="99"
-                    value={formData.age}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, age: event.target.value }))
-                    }
-                    required
-                  />
-
-                  <label className="auth-label" htmlFor="student-semester">
-                    Semestre actual
-                  </label>
-                  <input
-                    id="student-semester"
-                    className="auth-input"
-                    type="number"
-                    min="1"
-                    max="12"
-                    value={formData.semester}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, semester: event.target.value }))
-                    }
-                    required
-                  />
-
-                  <label className="auth-label" htmlFor="student-program">
-                    Carrera
-                  </label>
-                  <select
-                    id="student-program"
-                    className="auth-input auth-select"
-                    value={formData.program}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, program: event.target.value }))
-                    }
-                  >
-                    {PROGRAM_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <label className="auth-label" htmlFor="student-hours">
-                    Horas de estudio por semana
-                  </label>
-                  <input
-                    id="student-hours"
-                    className="auth-input"
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={formData.studyHours}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, studyHours: event.target.value }))
-                    }
-                    required
-                  />
-
-                  <label className="auth-label" htmlFor="student-english">
-                    Nivel de ingles
-                  </label>
-                  <select
-                    id="student-english"
-                    className="auth-input auth-select"
-                    value={formData.englishLevel}
-                    onChange={(event) =>
-                      setFormData((current) => ({ ...current, englishLevel: event.target.value }))
-                    }
-                  >
-                    <option value="A2">A2</option>
-                    <option value="B1">B1</option>
-                    <option value="B2">B2</option>
-                    <option value="C1">C1</option>
-                  </select>
-
-                  <div className="readonly-box">
-                    <div className="student-data-row">
-                      <span>Correo</span>
-                      <strong>{user.email}</strong>
-                    </div>
-                  </div>
-
-                  {feedback ? (
-                    <p className={`auth-feedback ${feedback.ok ? 'success' : 'error'}`}>
-                      {feedback.message}
-                    </p>
-                  ) : null}
-
-                  <button className="auth-button" type="submit">
-                    Guardar mis datos
-                  </button>
-                </form>
-              </article>
-            </section>
-
-            <StudentRiskVisualCard riskLevel={resolvedStudentData.risk} />
-          </>
-        ) : null}
-
-        {isPredictionSection ? (
-          <>
-            <MetricsGrid user={user} records={[studentRecord]} selectedProgram={user.program} />
-            <StudentExplanationCard analysisText={analysisText} factors={STUDENT_DASHBOARD_MOCK.factors} />
-            <section className="student-block-grid">
-              <StudentPerformanceAreasCard areas={STUDENT_DASHBOARD_MOCK.performanceAreas} />
-              <StudentComparisonCard
-                studentScore={resolvedStudentData.predictedScore}
-                comparison={STUDENT_DASHBOARD_MOCK.comparison}
-              />
-              <StudentProgressCard progress={STUDENT_DASHBOARD_MOCK.progress} />
-              <StudentRiskVisualCard riskLevel={resolvedStudentData.risk} />
-            </section>
-          </>
-        ) : null}
-
-        {isRecommendationSection ? (
-          <>
-            <section className="student-block-grid">
-              <StudentRecommendationsCard recommendations={STUDENT_DASHBOARD_MOCK.recommendations} />
-              <article className="card student-block">
-                <div className="section-header compact">
-                  <h2>Interpretacion automatica</h2>
+                <div className="student-data-row">
+                  <span>Avance en creditos</span>
+                  <strong>
+                    {profile?.pct_creditos ? `${profile.pct_creditos}%` : '—'}
+                  </strong>
                 </div>
-                <p className="student-interpretation">{analysisText}</p>
-                <div className="student-data-list">
-                  <div className="student-data-row">
-                    <span>Fortalezas detectadas</span>
-                    <strong>{resolvedStudentData.strengths.join(', ')}</strong>
-                  </div>
-                  <div className="student-data-row">
-                    <span>Riesgo actual</span>
-                    <strong>{getRiskVisualMeta(resolvedStudentData.risk).label}</strong>
-                  </div>
-                  <div className="student-data-row">
-                    <span>Siguiente enfoque</span>
-                    <strong>Lectura critica y gestion del tiempo</strong>
-                  </div>
+                <div className="student-data-row">
+                  <span>Simulacros realizados</span>
+                  <strong>{profile?.simulacros_realizados ?? '—'}</strong>
                 </div>
-              </article>
-            </section>
-
-            <StudentQuickEvaluationCard />
-          </>
-        ) : null}
+              </div>
+            </article>
+          </section>
+        </>
+      ) : null}
     </DashboardShell>
   )
 }
 
-function HomePage({ user, onLogout, onProfileUpdate }) {
+function HomePage({ user, onLogout, onUserUpdated }) {
   if (user.role === 'rector') {
-    return <RectorView user={user} onLogout={onLogout} />
+    return <RectorView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
   }
 
   if (user.role === 'decano') {
-    return <DeanView user={user} onLogout={onLogout} />
+    return <DeanView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
   }
 
   if (user.role === 'profesor') {
-    return <ProfessorView user={user} onLogout={onLogout} />
+    return <ProfessorView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
   }
 
-  return <StudentView user={user} onLogout={onLogout} onProfileUpdate={onProfileUpdate} />
+  return <StudentView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
 }
 
 function App() {
@@ -2649,7 +3539,7 @@ function App() {
             <HomePage
               user={session}
               onLogout={handleLogout}
-              onProfileUpdate={handleProfileUpdate}
+              onUserUpdated={(updated) => setSession(normalizeUser(updated))}
             />
           ) : (
             <Navigate to="/login" replace />

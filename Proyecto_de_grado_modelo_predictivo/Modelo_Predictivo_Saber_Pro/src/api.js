@@ -74,10 +74,49 @@ export async function apiUpdateProfile(payload) {
   return request('/profile', { method: 'PATCH', auth: true, body: payload })
 }
 
+// Actualiza datos de la cuenta autenticada (username, documento, o ambos).
+export async function apiUpdateMe(payload) {
+  return request('/auth/me', { method: 'PATCH', auth: true, body: payload })
+}
+
+// Cambia la contrasena del usuario autenticado.
+export async function apiChangeMyPassword({ currentPassword, newPassword }) {
+  return request('/auth/me/password', {
+    method: 'PATCH',
+    auth: true,
+    body: { currentPassword, newPassword },
+  })
+}
+
 export function apiLogout() {
   setToken(null)
 }
 
 export async function apiHealth() {
   return request('/health')
+}
+
+// =====================================================================
+// Estudiante: perfil + predicciones
+// =====================================================================
+
+export async function apiGetStudentProfile() {
+  return request('/student/profile', { auth: true })
+}
+
+export async function apiSaveStudentProfile(payload) {
+  return request('/student/profile', { method: 'PUT', auth: true, body: payload })
+}
+
+export async function apiGetStudentPredictions() {
+  return request('/student/predictions', { auth: true })
+}
+
+// =====================================================================
+// Cohorte (profesor / decano / rector)
+// =====================================================================
+
+export async function apiGetCohort(program) {
+  const qs = program ? `?program=${encodeURIComponent(program)}` : ''
+  return request(`/cohort/students${qs}`, { auth: true })
 }

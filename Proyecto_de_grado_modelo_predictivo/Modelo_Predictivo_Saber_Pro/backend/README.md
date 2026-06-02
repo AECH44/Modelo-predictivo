@@ -68,9 +68,24 @@ API REST en **Node.js + Express + PostgreSQL** para autenticación
 
 ## Cuentas de prueba (tras correr `npm run seed`)
 
-| Rol         | Email                          | Password |
-|-------------|--------------------------------|----------|
-| Rector      | rector@saberpro.edu.co         | 123456   |
-| Decano      | decano@saberpro.edu.co         | 123456   |
-| Profesor    | profesor@saberpro.edu.co       | 123456   |
-| Estudiante  | jhan.mesa@saberpro.edu.co      | 123456   |
+> Para los usuarios reales (no demo) cualquier persona se registra desde
+> `/register` o desde `POST /api/auth/register`. Los siguientes son los
+> usuarios sembrados como demo del sistema.
+
+| Rol         | Programa   | Correo                              | Documento  | Contraseña       |
+|-------------|------------|-------------------------------------|------------|-------------------|
+| Rector      | —          | rector@unac.edu.co                  | 1000000001 | `@7&arST76M&zS4` |
+| Decano      | Sistemas   | decano.sistemas@unac.edu.co         | 1000000002 | `He%343b8c&2B#m` |
+| Profesor    | Sistemas   | profesor.sistemas@unac.edu.co       | 1000000003 | `Dwu955j_4yY48v` |
+| Decano      | Industrial | decano.industrial@unac.edu.co       | 1000000005 | `sGst&Gd8Gu#_tX` |
+| Profesor    | Industrial | profesor.industrial@unac.edu.co     | 1000000006 | `Wt9&&X#8m638d8` |
+| Estudiante  | Industrial | jhan.mesa@saberpro.edu.co           | 1000000004 | `123456`          |
+
+El login acepta tanto el **correo** como el **documento** como identificador.
+
+Cualquier usuario puede entrar a su cuenta y desde el botón **"Mi cuenta"**
+del topbar/sidebar puede:
+
+- Cambiar su **nombre completo** (mismas reglas que en registro: solo letras y espacios; permite abreviaciones tipo `Dr.`, `Prof.`).
+- Cambiar su **documento de identidad** (5–15 dígitos; debe ser único). Una vez cambiado, el login también funciona con el nuevo documento.
+- Cambiar su **contraseña** (requiere la contraseña actual + nueva con mínimo 6 caracteres).

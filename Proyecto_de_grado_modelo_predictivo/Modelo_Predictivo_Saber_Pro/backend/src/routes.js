@@ -6,9 +6,22 @@ import {
   findUserByEmailOrDocumento,
   findUserById,
   sanitizeUserRow,
+  updateDocumento,
   updateUserProfile,
+  updateUsername,
+  updatePasswordHash,
 } from './users.js'
 import { hashPassword, signToken, verifyPassword, verifyToken } from './auth.js'
+import {
+  cohortMetrics,
+  getLatestPrediction,
+  getProfile,
+  listCohort,
+  listPredictions,
+  savePrediction,
+  upsertProfile,
+} from './profiles.js'
+import { computePrediction } from './predictor.js'
 
 const router = Router()
 
@@ -17,8 +30,10 @@ const router = Router()
 // =====================================================================
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
-// Nombre: letras (incluye acentos y ñ) + espacios + apóstrofo/guion. Mínimo 3 chars.
-const NAME_RE = /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+)*$/
+// Nombre: letras (incluye acentos y ñ) + espacios + apóstrofo/guion.
+// Permite el punto solo como abreviación (e.g. "Dr.", "Prof.", "Dra.").
+const NAME_RE =
+  /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?)*$/
 const DOCUMENTO_RE = /^\d{5,15}$/
 
 function validateName(name) {
@@ -238,6 +253,236 @@ router.patch('/profile', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[profile] error:', err)
     return res.status(500).json({ ok: false, message: 'Error actualizando perfil.' })
+  }
+})
+
+// PATCH /api/auth/me  — actualizar nombre y/o documento del usuario autenticado
+router.patch('/auth/me', requireAuth, async (req, res) => {
+  try {
+    const { username, documento } = req.body || {}
+    if (username === undefined && documento === undefined) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'No se enviaron campos para actualizar.' })
+    }
+
+    let updated = await findUserById(req.userId)
+    if (!updated) {
+      return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
+    }
+
+    if (username !== undefined) {
+      const nameError = validateName(username)
+      if (nameError) return res.status(400).json({ ok: false, message: nameError })
+      if (username.trim() !== updated.username) {
+        updated = await updateUsername(req.userId, username.trim())
+      }
+    }
+
+    if (documento !== undefined) {
+      const docError = validateDocumento(documento)
+      if (docError) return res.status(400).json({ ok: false, message: docError })
+      const normalizedDoc = documento.toString().trim()
+      if (normalizedDoc !== updated.documento) {
+        const existing = await findUserByDocumento(normalizedDoc)
+        if (existing && existing.id !== req.userId) {
+          return res.status(409).json({
+            ok: false,
+            message: 'Ese documento ya esta registrado por otra cuenta.',
+          })
+        }
+        updated = await updateDocumento(req.userId, normalizedDoc)
+      }
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Cuenta actualizada.',
+      user: sanitizeUserRow(updated),
+    })
+  } catch (err) {
+    console.error('[auth/me PATCH] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error actualizando cuenta.' })
+  }
+})
+
+// PATCH /api/auth/me/password — cambia la contrasena, requiere la actual.
+router.patch('/auth/me/password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {}
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'Se requiere la contrasena actual y la nueva.' })
+    }
+    const passError = validatePassword(newPassword)
+    if (passError) return res.status(400).json({ ok: false, message: passError })
+    if (currentPassword === newPassword) {
+      return res
+        .status(400)
+        .json({ ok: false, message: 'La nueva contrasena debe ser distinta a la actual.' })
+    }
+
+    const user = await findUserById(req.userId)
+    if (!user) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
+
+    const okCurrent = await verifyPassword(currentPassword, user.password_hash)
+    if (!okCurrent) {
+      return res
+        .status(401)
+        .json({ ok: false, message: 'La contrasena actual es incorrecta.' })
+    }
+
+    const newHash = await hashPassword(newPassword.trim())
+    const updated = await updatePasswordHash(req.userId, newHash)
+    return res.json({
+      ok: true,
+      message: 'Contrasena actualizada.',
+      user: sanitizeUserRow(updated),
+    })
+  } catch (err) {
+    console.error('[auth/me/password PATCH] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error actualizando contrasena.' })
+  }
+})
+
+// =====================================================================
+// PERFIL DEL ESTUDIANTE Y PREDICCIONES
+// =====================================================================
+
+function requireStudent(req, res, next) {
+  if (!req.userId) return res.status(401).json({ ok: false, message: 'No autenticado.' })
+  findUserById(req.userId).then((u) => {
+    if (!u) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
+    if (u.role !== 'estudiante') {
+      return res
+        .status(403)
+        .json({ ok: false, message: 'Solo los estudiantes pueden usar este recurso.' })
+    }
+    req.user = u
+    next()
+  }).catch((err) => {
+    console.error('[requireStudent] error:', err)
+    res.status(500).json({ ok: false, message: 'Error verificando usuario.' })
+  })
+}
+
+// GET /api/student/profile
+// Devuelve { profile, prediction } o profile=null si aun no llena el onboarding.
+router.get('/student/profile', requireAuth, requireStudent, async (req, res) => {
+  try {
+    const [profile, prediction] = await Promise.all([
+      getProfile(req.userId),
+      getLatestPrediction(req.userId),
+    ])
+    return res.json({ ok: true, profile, prediction })
+  } catch (err) {
+    console.error('[student/profile GET] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error cargando perfil.' })
+  }
+})
+
+const ENGLISH_LEVELS = new Set(['A1', 'A2', 'B1', 'B2', 'C1', 'C2'])
+
+function validateProfilePayload(p) {
+  function badRange(value, lo, hi, label) {
+    if (value === undefined || value === null || value === '') return null
+    const n = Number(value)
+    if (!Number.isFinite(n) || n < lo || n > hi) {
+      return `${label} debe estar entre ${lo} y ${hi}.`
+    }
+    return null
+  }
+  const checks = [
+    badRange(p.promedio_acumulado, 0, 5, 'Promedio acumulado'),
+    badRange(p.promedio_basicas, 0, 5, 'Promedio de basicas'),
+    badRange(p.promedio_ingenieria, 0, 5, 'Promedio de ingenieria'),
+    badRange(p.num_reprobadas, 0, 30, 'Numero de reprobadas'),
+    badRange(p.pct_creditos, 0, 100, 'Porcentaje de creditos'),
+    badRange(p.semestre, 1, 12, 'Semestre'),
+    badRange(p.estrato, 1, 6, 'Estrato'),
+    badRange(p.edad, 14, 80, 'Edad'),
+    badRange(p.horas_estudio_semana, 0, 80, 'Horas de estudio'),
+    badRange(p.simulacros_realizados, 0, 50, 'Simulacros'),
+    badRange(p.asistencia_pct, 0, 100, 'Asistencia'),
+  ]
+  if (p.genero !== undefined && p.genero !== null && p.genero !== '') {
+    if (!['M', 'F', 'O'].includes(p.genero)) checks.push('Genero invalido.')
+  }
+  if (p.nivel_ingles !== undefined && p.nivel_ingles !== null && p.nivel_ingles !== '') {
+    if (!ENGLISH_LEVELS.has(p.nivel_ingles)) checks.push('Nivel de ingles invalido.')
+  }
+  return checks.find(Boolean) || null
+}
+
+// PUT /api/student/profile
+// Upsert del perfil + recalculo y guardado de la prediccion.
+router.put('/student/profile', requireAuth, requireStudent, async (req, res) => {
+  try {
+    const error = validateProfilePayload(req.body || {})
+    if (error) return res.status(400).json({ ok: false, message: error })
+
+    const profile = await upsertProfile(req.userId, req.body || {})
+    const prediction = computePrediction(profile)
+    const saved = await savePrediction(req.userId, prediction)
+
+    return res.json({
+      ok: true,
+      message: 'Perfil guardado y prediccion actualizada.',
+      profile,
+      prediction: saved,
+    })
+  } catch (err) {
+    console.error('[student/profile PUT] error:', err)
+    return res
+      .status(500)
+      .json({ ok: false, message: 'Error guardando el perfil.' })
+  }
+})
+
+// GET /api/student/predictions
+router.get('/student/predictions', requireAuth, requireStudent, async (req, res) => {
+  try {
+    const list = await listPredictions(req.userId, 10)
+    return res.json({ ok: true, predictions: list })
+  } catch (err) {
+    console.error('[student/predictions] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error cargando historial.' })
+  }
+})
+
+// =====================================================================
+// COHORTE — para profesor / decano / rector
+// =====================================================================
+
+router.get('/cohort/students', requireAuth, async (req, res) => {
+  try {
+    const me = await findUserById(req.userId)
+    if (!me) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
+    if (!['rector', 'decano', 'profesor'].includes(me.role)) {
+      return res
+        .status(403)
+        .json({ ok: false, message: 'No autorizado para ver la cohorte.' })
+    }
+
+    // Rector ve todo. Decano/Profesor ven solo SU programa, salvo que
+    // explicitamente pidan otro (no se permite saltar la restriccion).
+    const requested = req.query.program
+    let program = 'all'
+    if (me.role === 'rector') {
+      program = ['sistemas', 'industrial', 'all'].includes(requested) ? requested : 'all'
+    } else {
+      program = me.program === 'all' ? (requested || 'all') : me.program
+    }
+
+    const [students, metrics] = await Promise.all([
+      listCohort({ program }),
+      cohortMetrics({ program }),
+    ])
+    return res.json({ ok: true, program, students, metrics })
+  } catch (err) {
+    console.error('[cohort/students] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error cargando cohorte.' })
   }
 })
 

@@ -117,3 +117,27 @@ export async function updateUserProfile(id, fields) {
   )
   return rows[0]
 }
+
+export async function updateUsername(id, username) {
+  const { rows } = await pool.query(
+    `UPDATE usuarios SET username = $1 WHERE id = $2 RETURNING ${SELECT_COLUMNS}`,
+    [username, id],
+  )
+  return rows[0]
+}
+
+export async function updateDocumento(id, documento) {
+  const { rows } = await pool.query(
+    `UPDATE usuarios SET documento = $1 WHERE id = $2 RETURNING ${SELECT_COLUMNS}`,
+    [documento, id],
+  )
+  return rows[0]
+}
+
+export async function updatePasswordHash(id, passwordHash) {
+  const { rows } = await pool.query(
+    `UPDATE usuarios SET password_hash = $1 WHERE id = $2 RETURNING ${SELECT_COLUMNS}`,
+    [passwordHash, id],
+  )
+  return rows[0]
+}
