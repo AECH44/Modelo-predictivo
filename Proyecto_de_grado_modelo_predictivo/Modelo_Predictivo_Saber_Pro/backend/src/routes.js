@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { pool } from './db.js'
 import {
   createUser,
   findUserByDocumento,
@@ -686,6 +687,46 @@ router.get('/admin/stats', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[admin/stats] error:', err)
     return res.status(500).json({ ok: false, message: 'Error cargando estadisticas.' })
+  }
+})
+
+// POST /api/admin/recompute-predictions
+// Regenera la prediccion para TODOS los estudiantes con perfil completed.
+// Util despues de cargas masivas (ETL desde SQL Server) o cambios en el predictor.
+router.post('/admin/recompute-predictions', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows: students } = await pool.query(`
+      SELECT sp.user_id, sp.promedio_acumulado, sp.promedio_basicas, sp.promedio_ingenieria,
+             sp.num_reprobadas, sp.pct_creditos, sp.semestre, sp.estrato,
+             sp.acceso_internet, sp.acceso_pc, sp.trabaja, sp.genero, sp.edad, sp.ciudad,
+             sp.horas_estudio_semana, sp.nivel_ingles, sp.simulacros_realizados,
+             sp.asistencia_pct
+      FROM student_profiles sp
+      WHERE sp.completed = true
+    `)
+    let ok = 0, err = 0
+    for (const r of students) {
+      try {
+        const prediction = computePrediction(r)
+        await savePrediction(r.user_id, prediction)
+        ok++
+      } catch (e) {
+        err++
+        console.error(`[recompute] user_id=${r.user_id} err:`, e.message)
+      }
+    }
+    insertAuditLog({
+      adminId: req.userId,
+      adminEmail: req.adminUser.email,
+      accion: 'update_user',
+      targetId: null,
+      targetDocumento: null,
+      detalles: { accion: 'recompute_predictions', total: students.length, ok, err },
+    }).catch(() => {})
+    return res.json({ ok: true, total: students.length, generated: ok, errors: err })
+  } catch (err) {
+    console.error('[admin/recompute] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error regenerando predicciones.' })
   }
 })
 

@@ -9,6 +9,8 @@ function clamp(v, lo, hi) {
 }
 
 function num(v, fallback = 0) {
+  // null/undefined/'' -> fallback. Number(null)=0 engaña a isFinite.
+  if (v === null || v === undefined || v === '') return fallback
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
 }
