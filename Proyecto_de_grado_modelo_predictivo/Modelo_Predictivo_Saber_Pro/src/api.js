@@ -53,6 +53,9 @@ export async function apiLogin({ identifier, password }) {
   return result
 }
 
+// El registro publico esta deshabilitado: los estudiantes se importan en lote
+// desde el backend con `import-students.js`. Esta funcion se conserva solo para
+// el script de importacion; la UI ya no la usa.
 export async function apiRegister(payload) {
   const result = await request('/auth/register', {
     method: 'POST',
@@ -66,17 +69,20 @@ export async function apiRecover(identifier) {
   return request('/auth/recover', { method: 'POST', body: { identifier } })
 }
 
+// Devuelve la URL a la que el frontend debe redirigir al usuario para que
+// Google lo autentique. Si el backend no tiene configurado OAuth, devuelve
+// { ok: false, status: 503, message }.
+export async function apiGetGoogleAuthUrl(returnTo = '/inicio') {
+  const qs = `?returnTo=${encodeURIComponent(returnTo)}`
+  return request(`/auth/google/url${qs}`)
+}
+
 export async function apiMe() {
   return request('/auth/me', { auth: true })
 }
 
 export async function apiUpdateProfile(payload) {
   return request('/profile', { method: 'PATCH', auth: true, body: payload })
-}
-
-// Actualiza datos de la cuenta autenticada (username, documento, o ambos).
-export async function apiUpdateMe(payload) {
-  return request('/auth/me', { method: 'PATCH', auth: true, body: payload })
 }
 
 // Cambia la contrasena del usuario autenticado.
@@ -119,4 +125,50 @@ export async function apiGetStudentPredictions() {
 export async function apiGetCohort(program) {
   const qs = program ? `?program=${encodeURIComponent(program)}` : ''
   return request(`/cohort/students${qs}`, { auth: true })
+}
+
+// =====================================================================
+// Administrador (solo rol 'administrador')
+// =====================================================================
+
+function buildQuery(params = {}) {
+  const sp = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === '') return
+    sp.set(k, String(v))
+  })
+  const s = sp.toString()
+  return s ? `?${s}` : ''
+}
+
+export async function apiGetAdminStats() {
+  return request('/admin/stats', { auth: true })
+}
+
+export async function apiListAdminUsers(filters = {}) {
+  return request(`/admin/users${buildQuery(filters)}`, { auth: true })
+}
+
+export async function apiUpsertAdminUser(payload) {
+  return request('/admin/users', { method: 'POST', auth: true, body: payload })
+}
+
+export async function apiUpdateAdminUser(id, payload) {
+  return request(`/admin/users/${id}`, { method: 'PATCH', auth: true, body: payload })
+}
+
+export async function apiDeactivateAdminUser(id) {
+  return request(`/admin/users/${id}/deactivate`, { method: 'POST', auth: true })
+}
+
+export async function apiActivateAdminUser(id) {
+  return request(`/admin/users/${id}/activate`, { method: 'POST', auth: true })
+}
+
+export async function apiGetAdminAudit(filters = {}) {
+  return request(`/admin/audit${buildQuery(filters)}`, { auth: true })
+}
+
+export async function apiGetUserAudit(userId, filters = {}) {
+  return request(`/admin/users/${userId}/audit${buildQuery(filters)}`, { auth: true })
 }
