@@ -1,0 +1,51 @@
+# Dependencias
+node_modules/
+*/node_modules/
+
+# Builds
+dist/
+build/
+*/dist/
+*/build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Variables de entorno (contienen secretos, NUNCA commitear)
+.env
+.env.local
+.env.*.local
+*/.env
+!*/.env.example
+
+# Archivos generados por el proyecto que NO deben versionarse
+# (contienen datos sensibles o son artefactos intermedios)
+**/credenciales_generadas.csv
+**/estudiantes_ingenieria.csv
+**/estudiantes_limpio.csv
+**/reporte_procesamiento.csv
+**/procesamiento_detalle.json
+
+# Scripts y artefactos de debug/prueba temporales
+**/debug_*.py
+**/debug_*.txt
+**/prueba_*.js
+
+# Diagnosticos visuales (carpetas de screenshots locales)
+diagnostico_*/
+tmp_playwright/
+
+# Resultados de ejecucion
+resultados_prediccion_bd.json
+**/resultados_prediccion_bd.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
