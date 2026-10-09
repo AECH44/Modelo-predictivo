@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -X POST http://localhost:8888/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"demo@unac.edu.co\\\\\",\\\\\"password\\\\\":\\\\\"Demo1234\\\\\"}\")",
+      "Bash(curl -s -X POST http://localhost:8888/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"demo@unac.edu.co\\\\\",\\\\\"password\\\\\":\\\\\"Demo1234\\\\\"}\")",
+      "Bash(taskkill //F //PID 31196)",
+      "Bash(taskkill //F //PID 41372)",
+      "Bash(taskkill //F //PID 7616)",
+      "Bash(taskkill //F //PID 28428)",
+      "Bash(taskkill //F //PID 28500)",
+      "Bash(taskkill //F //FI \"IMAGENAME eq python.exe\" //FI \"WINDOWTITLE eq *backend*\")",
+      "Bash(taskkill //F //FI \"IMAGENAME eq python.exe\" //FI \"WINDOWTITLE eq *uvicorn*\")",
+      "Bash(taskkill //F //IM \"python.exe\" //FI \"WINDOWTITLE eq *predictor*\")",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -X POST http://localhost:8000/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"demo@unac.edu.co\\\\\",\\\\\"password\\\\\":\\\\\"Demo1234\\\\\"}\")",
+      "Bash(npm run *)",
+      "Bash(curl *)",
+      "Bash(PGPASSWORD=modelopredictivo /c/Program Files/PostgreSQL/18/bin/psql.exe *)",
+      "Bash(npm start *)",
+      "Bash(taskkill *)"
+    ]
+  }
+}

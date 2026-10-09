@@ -1,51 +1,82 @@
-# Dependencias
+# =============================================================================
+# Modelo Predictivo Saber Pro — .gitignore
+# =============================================================================
+
+# ---------- Dependencias ----------
 node_modules/
 */node_modules/
+.venv/
+*/.venv/
 
-# Builds
+# ---------- Builds y artefactos generados ----------
 dist/
 build/
 */dist/
 */build/
+ml-training/analysis/*.png
+ml-training/models/
+ml-training/trained_models/
 
-# Logs
+# ---------- Logs ----------
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# Variables de entorno (contienen secretos, NUNCA commitear)
+# ---------- Variables de entorno (secretos, NUNCA commitear) ----------
 .env
 .env.local
 .env.*.local
 */.env
 !*/.env.example
 
-# Archivos generados por el proyecto que NO deben versionarse
-# (contienen datos sensibles o son artefactos intermedios)
-**/credenciales_generadas.csv
-**/estudiantes_ingenieria.csv
-**/estudiantes_limpio.csv
-**/reporte_procesamiento.csv
-**/procesamiento_detalle.json
+# ---------- Python ----------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
 
-# Scripts y artefactos de debug/prueba temporales
-**/debug_*.py
-**/debug_*.txt
-**/prueba_*.js
-
-# Diagnosticos visuales (carpetas de screenshots locales)
-diagnostico_*/
-tmp_playwright/
-
-# Resultados de ejecucion
-resultados_prediccion_bd.json
-**/resultados_prediccion_bd.json
-
-# OS / editor
+# ---------- OS / editor ----------
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 *.swp
 *.swo
+*.swn
+
+# ---------- Datos sensibles / logs de procesamiento ----------
+**/credenciales_generadas.csv
+**/estudiantes_ingenieria.csv
+**/estudiantes_limpio.csv
+**/reporte_procesamiento.csv
+**/procesamiento_detalle.json
+
+# ---------- Scripts y artefactos de debug/prueba temporales ----------
+**/debug_*.py
+**/debug_*.txt
+**/prueba_*.js
+
+# ---------- Resultados de ejecucion ----------
+resultados_prediccion_bd.json
+**/resultados_prediccion_bd.json
+
+# ---------- Backups y datos pesados (regenerables) ----------
+# Mantener backup/tmp_backup_pre_limpieza.sql versionado por seguridad
+# data/ y backup/ se versionan completos porque son pequeñas y utiles
+
+# ---------- Estructura de carpetas esperada ----------
+# Raíz:
+#   README.md, .gitignore, .env.example
+#   .claude/                     (config Claude local, no versionado)
+#   data/                        (CSV dataset)
+#   backup/                      (snapshots de BD)
+#   docs/                        (documentación)
+#   frontend/                    (React + Vite)
+#   backend/                     (Express + PostgreSQL)
+#   ml-service/                  (FastAPI - servicio de predicción)
+#   ml-training/                 (pipeline de entrenamiento Python)
