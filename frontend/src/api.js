@@ -26,7 +26,7 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
       headers,
       body: body ? JSON.stringify(body) : undefined,
     })
-  } catch (err) {
+  } catch {
     return {
       ok: false,
       status: 0,
@@ -224,7 +224,9 @@ export async function apiGetAnalysisMetricsCsv() {
     try {
       const data = await res.json()
       msg = data.message || msg
-    } catch {}
+    } catch {
+      // Si el body no es JSON valido conservamos el msg por defecto.
+    }
     return { ok: false, message: msg, status: res.status }
   }
   const blob = await res.blob()

@@ -288,5 +288,3 @@ export function Icon({ name, size = 18, className = '' }) {
     </span>
   )
 }
-
-export const ICON_NAMES = Object.keys(ICONS)

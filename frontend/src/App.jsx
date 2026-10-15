@@ -5,8 +5,8 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import {
   Navigate,
@@ -42,7 +42,6 @@ import {
   apiRecover,
   apiSaveStudentProfile,
   apiUpdateAdminUser,
-  apiUpdateProfile,
   apiUpsertAdminUser,
   getToken,
   setToken as apiSetToken,
@@ -349,36 +348,36 @@ function Avatar({ name, size = 'md' }) {
 // Muestra un aviso sticky cuando faltan <5 min para que expire el JWT.
 // Sin boton de "extender" (no hay endpoint de refresh); al expirar el JWT
 // la app maneja el 401 redirigiendo al login.
+//
+// Implementacion: usamos useSyncExternalStore para suscribirnos al "tiempo
+// que pasa" (setInterval) sin disparar el warning de setState sincrono en
+// useEffect (regla React 19).
 function SessionBanner({ token }) {
-  const [remainingMs, setRemainingMs] = useState(null)
+  function decodeExp(tokenStr) {
+    try {
+      const parts = tokenStr.split('.')
+      if (parts.length !== 3) return null
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+      return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+    } catch {
+      return null
+    }
+  }
 
-  useEffect(() => {
-    if (!token) {
-      setRemainingMs(null)
-      return undefined
-    }
-    function decodeExp(tokenStr) {
-      try {
-        const parts = tokenStr.split('.')
-        if (parts.length !== 3) return null
-        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
-        return typeof payload.exp === 'number' ? payload.exp * 1000 : null
-      } catch {
-        return null
-      }
-    }
-    const exp = decodeExp(token)
-    if (!exp) {
-      setRemainingMs(null)
-      return undefined
-    }
-    function tick() {
-      setRemainingMs(Math.max(0, exp - Date.now()))
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [token])
+  const remainingMs = useSyncExternalStore(
+    (notify) => {
+      if (!token) return () => {}
+      const exp = decodeExp(token)
+      if (!exp) return () => {}
+      const id = setInterval(notify, 1000)
+      return () => clearInterval(id)
+    },
+    () => {
+      if (!token) return null
+      const exp = decodeExp(token)
+      return exp ? Math.max(0, exp - Date.now()) : null
+    },
+  )
 
   if (remainingMs == null || remainingMs > 5 * 60 * 1000) return null
   const totalSec = Math.ceil(remainingMs / 1000)
@@ -441,9 +440,18 @@ function RecentActivity({ limit = 5 }) {
   const [entries, setEntries] = useState([])
   const [error, setError] = useState(null)
 
+  // Suscribirse al reloj para que "hace X min" se refresque sin recalcular
+  // Date.now() durante el render (regla react-hooks/purity).
+  const nowTick = useSyncExternalStore(
+    (notify) => {
+      const id = setInterval(notify, 30_000)
+      return () => clearInterval(id)
+    },
+    () => Date.now(),
+  )
+
   useEffect(() => {
     let cancelled = false
-    setStatus('loading')
     apiGetAdminAudit({ limit, offset: 0 })
       .then((res) => {
         if (cancelled) return
@@ -494,7 +502,7 @@ function RecentActivity({ limit = 5 }) {
   function timeAgo(iso) {
     if (!iso) return ''
     const t = new Date(iso).getTime()
-    const ms = Date.now() - t
+    const ms = nowTick - t
     if (ms < 60_000) return 'hace un momento'
     if (ms < 3600_000) return `hace ${Math.floor(ms / 60_000)} min`
     if (ms < 86_400_000) return `hace ${Math.floor(ms / 3600_000)} h`
@@ -516,7 +524,6 @@ function RecentActivity({ limit = 5 }) {
     return parseUserAgent(ua).isApi
   }
   function describe(entry) {
-    const who = entry.adminEmail || (entry.adminId != null ? `admin #${entry.adminId}` : 'sistema')
     switch (entry.accion) {
       case 'LOGIN_SUCCESS': return 'Inicio de sesion'
       case 'LOGIN_FAIL': return 'Intento de login fallido'
@@ -1020,79 +1027,12 @@ function loadSession() {
   return storedSession ? normalizeUser(storedSession) : null
 }
 
-function sanitizeUser(user) {
-  return normalizeUser(user)
-}
-
 function getProgramLabel(program) {
   if (program === 'all') {
     return 'Vista institucional'
   }
 
   return PROGRAMS[program] || PROGRAMS.sistemas
-}
-
-function getStudentRecordForUser(user) {
-  const matchedRecord = STUDENT_RECORDS.find(
-    (record) => record.id === user.studentRecordId || record.email === user.email,
-  )
-
-  if (matchedRecord) {
-    return {
-      ...matchedRecord,
-      name: user.username,
-      age: user.age,
-      semester: Number(user.semester || matchedRecord.semester),
-      studyHours: Number(user.studyHours || matchedRecord.studyHours),
-      englishLevel: user.englishLevel || matchedRecord.englishLevel,
-      program: user.program || matchedRecord.program,
-    }
-  }
-
-  return {
-    id: user.studentRecordId || user.email,
-    name: user.username,
-    email: user.email,
-    code: '',
-    program: user.program,
-    semester: '',
-    age: user.age,
-    predictedScore: '',
-    actualScore: '',
-    trend: '',
-    risk: '',
-    studyHours: '',
-    englishLevel: user.englishLevel || '',
-    strengths: [],
-    recommendation: '',
-  }
-}
-
-function getScopedStudents(user, selectedProgram = user.program) {
-  if (
-    (user.role === 'rector' || user.role === 'administrador') &&
-    selectedProgram === 'all'
-  ) {
-    return STUDENT_RECORDS
-  }
-
-  if (user.role === 'rector' || user.role === 'decano' || user.role === 'profesor') {
-    return STUDENT_RECORDS.filter((record) => record.program === selectedProgram)
-  }
-
-  return [getStudentRecordForUser(user)]
-}
-
-function buildProgramSummary(program) {
-  return {
-    program,
-    label: getProgramLabel(program),
-    students: EMPTY_VALUE,
-    averagePredicted: EMPTY_VALUE,
-    averageActual: EMPTY_VALUE,
-    highRisk: EMPTY_VALUE,
-    topStudent: EMPTY_VALUE,
-  }
 }
 
 function metricCardsForRole(user, records = []) {
@@ -2079,7 +2019,7 @@ function LoginForm({ onLogin }) {
       // Redirigimos al usuario a Google. Cuando vuelva, el useEffect de arriba
       // procesara el callback.
       window.location.href = result.url
-    } catch (err) {
+    } catch {
       setFeedback({ ok: false, message: 'Error contacting the server.' })
     } finally {
       setGoogleLoading(false)
@@ -2438,9 +2378,7 @@ function AccountSettingsModal({ user, onClose }) {
 function DashboardShell({
   user,
   onLogout,
-  onUserUpdated,
   children,
-  searchPlaceholder = 'Buscar estudiante...',
   topbarControls = null,
   activeNavIndex = 0,
   onNavSelect = null,
@@ -2562,7 +2500,6 @@ function CohortPanel({ user, allowProgramFilter = false }) {
 
   useEffect(() => {
     let alive = true
-    setData((s) => ({ ...s, status: 'loading' }))
     apiGetCohort(allowProgramFilter ? program : undefined).then((res) => {
       if (!alive) return
       if (!res.ok) {
@@ -2786,7 +2723,6 @@ function useRectorCohort(program) {
   const [state, setState] = useState({ status: 'loading', students: [], metrics: null, error: null })
   useEffect(() => {
     let cancelled = false
-    setState({ status: 'loading', students: [], metrics: null, error: null })
     apiGetCohort(program === 'all' ? 'all' : program)
       .then((res) => {
         if (cancelled) return
@@ -2807,15 +2743,41 @@ function useRectorCohort(program) {
   return state
 }
 
-function pct(value) {
-  if (value === null || value === undefined) return '—'
-  return `${Math.round(value * 100)}%`
-}
-
 function avgOf(list, fn) {
   const xs = list.map(fn).filter((v) => v !== null && v !== undefined && Number.isFinite(v))
   if (!xs.length) return null
   return xs.reduce((a, b) => a + b, 0) / xs.length
+}
+
+// Helper top-level: descargar CSV de cohorte rector. Se mantiene fuera de los
+// componentes para evitar que el linter (react-hooks/purity) interprete la
+// llamada a Date.now() como impureza durante el render.
+function descargarRectorCsv(inScope, selectedProgram) {
+  const rows = [
+    ['documento', 'nombre', 'programa', 'completado', 'puntaje_estimado', 'clase', 'asistencia', 'nivel_ingles'],
+    ...inScope.map((s) => [
+      s.documento,
+      s.username,
+      s.program,
+      s.completed ? 'si' : 'no',
+      s.puntajeEstimado ?? '',
+      s.clase ?? '',
+      s.asistencia ?? '',
+      s.nivelIngles ?? '',
+    ]),
+  ]
+  const csv = rows
+    .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `rector_${selectedProgram}_${Date.now()}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 function bucketize(students) {
@@ -2837,11 +2799,10 @@ function bucketize(students) {
 
 function RectorPanelSection({ user, selectedProgram }) {
   const { status, students, metrics, error } = useRectorCohort(selectedProgram)
-  const [visibleSummaries, setVisibleSummaries] = useState([])
-  useEffect(() => {
-    if (status !== 'ready') return
+  const visibleSummaries = useMemo(() => {
+    if (status !== 'ready') return []
     const programs = [selectedProgram || 'sistemas']
-    const summaries = programs.map((program) => {
+    return programs.map((program) => {
       const inProg = students.filter((s) => s.program === program)
       const b = bucketize(inProg)
       return {
@@ -2854,7 +2815,6 @@ function RectorPanelSection({ user, selectedProgram }) {
         highRisk: b.riesgoAlto,
       }
     })
-    setVisibleSummaries(summaries)
   }, [status, students, metrics, selectedProgram])
 
   const kpiRecords = students
@@ -3117,7 +3077,7 @@ function RectorMetasSection({ selectedProgram }) {
 // =========================
 // Seccion 2: Comparativo
 // =========================
-function RectorComparativoSection({ selectedProgram }) {
+function RectorComparativoSection() {
   const sistemas = useRectorCohort('sistemas')
   const isReady = sistemas.status === 'ready'
 
@@ -3249,31 +3209,7 @@ function RectorReportesSection({ selectedProgram }) {
     .slice(0, 10)
 
   function descargarCsv() {
-    const rows = [
-      ['documento', 'nombre', 'programa', 'completado', 'puntaje_estimado', 'clase', 'asistencia', 'nivel_ingles'],
-      ...inScope.map((s) => [
-        s.documento,
-        s.username,
-        s.program,
-        s.completed ? 'si' : 'no',
-        s.puntajeEstimado ?? '',
-        s.clase ?? '',
-        s.asistencia ?? '',
-        s.nivelIngles ?? '',
-      ]),
-    ]
-    const csv = rows
-      .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `rector_${selectedProgram}_${Date.now()}.csv`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    descargarRectorCsv(inScope, selectedProgram)
   }
 
   return (
@@ -3592,7 +3528,7 @@ function DeanProgramasSection({ selectedProgram }) {
   )
 }
 
-function DeanBenchmarkingSection({ user, selectedProgram }) {
+function DeanBenchmarkingSection({ selectedProgram }) {
   const state = useRectorCohort(selectedProgram)
   const isReady = state.status === 'ready'
 
@@ -3921,7 +3857,7 @@ function DeanExecutiveReading({ selectedProgram }) {
 }
 
 function ProfessorView({ user, onLogout, onUserUpdated }) {
-  const [selectedProgram, setSelectedProgram] = useState(user.program || 'sistemas')
+  const [selectedProgram] = useState(user.program || 'sistemas')
   const [activeSectionIndex, setActiveSectionIndex] = useState(0)
   const professorSections = ROLE_CONFIG.profesor.nav
   const records = getProfessorRecordsByProgram(selectedProgram)
@@ -5263,9 +5199,6 @@ function AdminReportesSection() {
 
   useEffect(() => {
     let alive = true
-    setSummaryStatus('loading')
-    setCohortStatus('loading')
-
     Promise.all([apiGetCohort('all'), apiGetAdminReportSummary('all')])
       .then(([cohort, sum]) => {
         if (!alive) return
@@ -5723,7 +5656,6 @@ function AdminStatsPanel() {
 
   useEffect(() => {
     let cancelled = false
-    setStatus('loading')
     apiGetAdminStats()
       .then((res) => {
         if (cancelled) return
@@ -5823,7 +5755,7 @@ function AdminStatsPanel() {
   )
 }
 
-function UserUpsertModal({ initialUser, currentUser, onClose, onSaved }) {
+function UserUpsertModal({ initialUser, onClose, onSaved }) {
   const isEdit = Boolean(initialUser)
   const [documento, setDocumento] = useState(initialUser?.documento || '')
   const [username, setUsername] = useState(initialUser?.username || '')
@@ -6884,7 +6816,6 @@ function AdminAnalysisPanel() {
   const bestM = bestName ? metrics.all_models[bestName] : null
   const lrM = metrics?.all_models?.LogisticRegression
   const gbM = metrics?.all_models?.GradientBoostingClassifier
-  const cmp = (a, b) => (a == null && b == null ? 0 : (a == null ? -1 : (b == null ? 1 : b - a)))
   const fmt = (n, d = 4) => (n == null ? '-' : Number(n).toFixed(d))
 
   return (
@@ -7509,30 +7440,6 @@ function App() {
   function handleLogout() {
     apiLogout()
     setSession(null)
-  }
-
-  async function handleProfileUpdate(data) {
-    if (!session || session.role !== 'estudiante') {
-      return {
-        ok: false,
-        message: 'Solo los estudiantes pueden actualizar este formulario.',
-      }
-    }
-
-    const result = await apiUpdateProfile({
-      age: data.age,
-      semester: data.semester,
-      studyHours: data.studyHours,
-      englishLevel: data.englishLevel,
-      program: data.program,
-    })
-
-    if (!result.ok) {
-      return { ok: false, message: result.message || 'No se pudo guardar el perfil.' }
-    }
-
-    setSession(normalizeUser(result.user))
-    return { ok: true, message: 'Tus datos personales fueron actualizados.' }
   }
 
   return (
