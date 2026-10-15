@@ -1,6 +1,6 @@
 # Dependencias para el pipeline ML con datos reales (Saber Pro)
 # Python 3.14+ compatible. Sin pines estrictos para que pip resuelva.
-scikit-learn>=1.6.0
+scikit-learn>=1.9.1
 pandas>=2.2.0
 numpy>=2.0.0
 matplotlib>=3.10.0
