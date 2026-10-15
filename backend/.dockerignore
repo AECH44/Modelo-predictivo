@@ -1,0 +1,9 @@
+node_modules/
+.venv/
+*.log
+.env
+.env.local
+Dockerfile
+.dockerignore
+tests/
+coverage/

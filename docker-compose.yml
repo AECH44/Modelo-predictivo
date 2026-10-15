@@ -1,0 +1,206 @@
+# docker-compose.yml - Modelo Predictivo Saber Pro
+#
+# Levanta los 3 servicios de la aplicacion + PostgreSQL 18 en un solo comando.
+#
+# Flujo de primer arranque:
+#   1. docker-compose up -d              # postgres + backend + frontend + ml-service
+#   2. docker-compose exec backend node src/scripts/seed-admins.js
+#      (crea las 4 cuentas admin; solo la primera vez)
+#   3. Colocar data/base-de-datos-para-proyecto-de-grado-Ing.csv en data/
+#      y cargar el dataset:
+#      docker-compose --profile init run --rm init-data
+#   4. Entrenar el modelo (necesario antes de usar SHAP):
+#      docker-compose --profile train run --rm ml-training
+#
+# Comandos utiles:
+#   docker-compose up -d              # arrancar
+#   docker-compose down               # parar (conserva datos en volumen pgdata)
+#   docker-compose down -v            # parar Y borrar volumenes (reset total)
+#   docker-compose logs -f backend    # ver logs de un servicio
+#   docker-compose ps                 # estado de los servicios
+#
+# Puertos expuestos:
+#   5173 - Frontend (Vite dev server)
+#   4000 - Backend Express
+#   8000 - FastAPI / Swagger en /docs
+#   5432 - PostgreSQL (opcional, para conectar desde el host)
+
+name: modelo-predictivo-saber-pro
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 18
+  # Crea automaticamente las tablas al primer arranque via scripts en
+  # /docker-entrypoint-initdb.d/ (orden alfabetico: 01, 02, 03).
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:18
+    container_name: saberpro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saberpro
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: modelopredictivo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # DDL autoejecutado en orden alfabetico. Ver docker/01-usuarios.sql.
+      - ./docker/01-usuarios.sql:/docker-entrypoint-initdb.d/01-usuarios.sql:ro
+      - ./backend/scripts/ddl.sql:/docker-entrypoint-initdb.d/02-dataset.sql:ro
+      - ./backend/scripts/apply-audit-ddl.sql:/docker-entrypoint-initdb.d/03-audit.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d saberpro"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Backend Express (puerto 4000)
+  # Hot-reload via `node --watch`. Los volumenes montan src/ para edicion live.
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: saberpro-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: saberpro
+      DB_USER: postgres
+      DB_PASSWORD: modelopredictivo
+      JWT_SECRET: dev-secret-cambiar-en-produccion-12345
+      JWT_EXPIRES_IN: 7d
+      FASTAPI_URL: http://ml-service:8000
+      CORS_ORIGINS: http://localhost:5173
+      NODE_ENV: development
+      PORT: "4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+    volumes:
+      # Hot-reload: editar archivos en ./backend/src reinicia el servidor.
+      - ./backend/src:/app/src
+
+  # ---------------------------------------------------------------------------
+  # Frontend Vite (puerto 5173)
+  # HMR (hot module replacement) integrado en Vite.
+  # CHOKIDAR_USEPOLLING=true es necesario en Windows porque los bind mounts
+  # hacia el contenedor no generan eventos inotify.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: saberpro-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE: http://localhost:4000/api
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      # Bind mount del codigo (para que Vite HMR funcione al editar).
+      - ./frontend:/app
+      # Enmascara /app/node_modules para que npm install del host no se borre.
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # ML Service FastAPI (puerto 8000)
+  # Sirve el .pkl real. Si no existe el modelo, arranca en modo demo
+  # (predicciones aleatorias) sin romper el sistema.
+  # ---------------------------------------------------------------------------
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: saberpro-ml-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: saberpro
+      DB_USER: postgres
+      DB_PASSWORD: modelopredictivo
+      MODEL_PATH: ml-training/trained_models/saberpro_model.pkl
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      # Modelo y background sample (persiste en host para que sobrevivan
+      # entre `docker-compose down` y `up`).
+      - ./ml-training/trained_models:/ml-training/trained_models:ro
+      - ./ml-training/data:/ml-training/data:ro
+      # Hot-reload del codigo del servicio (uvicorn --reload).
+      - ./ml-service/app:/ml-service/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # init-data (perfil "init")
+  # Carga el CSV anonimo en dataset_saber_pro_real.
+  # Solo se ejecuta bajo demanda:
+  #   docker-compose --profile init run --rm init-data
+  # Requiere que ./data/base-de-datos-para-proyecto-de-grado-Ing.csv exista.
+  # ---------------------------------------------------------------------------
+  init-data:
+    profiles: ["init"]
+    image: python:3.11-slim
+    container_name: saberpro-init-data
+    working_dir: /scripts
+    command: ["python", "scripts/cargar_dataset.py"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: saberpro
+      DB_USER: postgres
+      DB_PASSWORD: modelopredictivo
+    volumes:
+      - ./backend/scripts:/scripts
+      - ./data:/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # ml-training (perfil "train")
+  # Reentrena el modelo y persiste .pkl + background_sample.pkl.
+  # Solo se ejecuta bajo demanda:
+  #   docker-compose --profile train run --rm ml-training
+  # ---------------------------------------------------------------------------
+  ml-training:
+    profiles: ["train"]
+    build:
+      context: ./ml-training
+      dockerfile: Dockerfile
+    container_name: saberpro-ml-training
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: saberpro
+      DB_USER: postgres
+      DB_PASSWORD: modelopredictivo
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./ml-training/trained_models:/app/trained_models
+      - ./ml-training/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  # Datos persistentes de postgres. Sobreviven a `docker-compose down`.
+  # Se borran con `docker-compose down -v`.
+  pgdata:
+  # node_modules del frontend: volumen anonimo para que npm install local
+  # del host no pise la instalacion dentro del contenedor.
+  frontend_node_modules:

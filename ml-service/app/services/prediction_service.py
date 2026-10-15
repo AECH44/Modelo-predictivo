@@ -18,8 +18,18 @@ from ..models.student_model import (
     PredictionHistory,
     HistoryResponse,
     StatisticsResponse,
-    CategoryStats
+    CategoryStats,
+    FeatureContribution,
 )
+
+# SHAP se importa de forma opcional: si no esta instalado, el servicio sigue
+# funcionando pero sin feature_contributions (lista vacia).
+try:
+    import shap  # type: ignore
+    _SHAP_AVAILABLE = True
+except Exception:  # pragma: no cover - shap no instalado
+    shap = None  # type: ignore
+    _SHAP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +38,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 MODEL_PATH = os.getenv('MODEL_PATH', 'ml-training/trained_models/saberpro_model.pkl')
 FULL_MODEL_PATH = BASE_DIR / MODEL_PATH
+# Background sample para SHAP (persiste ml-training/train_from_real.py). Opcional.
+BACKGROUND_PATH = BASE_DIR / 'ml-training' / 'data' / 'background_sample.pkl'
 
 # Mapeo de categorías (modelo real devuelve strings, no enteros)
 CATEGORY_MAP = {0: 'Bajo', 1: 'Medio', 2: 'Alto'}
@@ -45,6 +57,8 @@ class PredictionService:
     model: Optional[Any] = None
     scaler: Optional[Any] = None
     _db_connected: bool = False
+    _shap_explainer: Optional[Any] = None
+    _shap_feature_names: Optional[List[str]] = None
 
     @classmethod
     def load_model(cls) -> bool:
@@ -66,6 +80,10 @@ class PredictionService:
                     cls.model = model_data
                     cls.scaler = None
                 logger.info(f"Modelo cargado exitosamente desde {FULL_MODEL_PATH}")
+
+                # Intentar inicializar SHAP. Es opcional: si falla, seguimos
+                # funcionando y el endpoint omite feature_contributions.
+                cls._init_shap_explainer()
                 return True
             else:
                 logger.warning(f"Archivo modelo no encontrado: {FULL_MODEL_PATH}")
@@ -74,6 +92,73 @@ class PredictionService:
         except Exception as e:
             logger.error(f"Error cargando modelo: {e}")
             return False
+
+    @classmethod
+    def _init_shap_explainer(cls) -> None:
+        """
+        Construye el TreeExplainer de SHAP para el clasificador subyacente.
+        Solo funciona si el modelo es un Pipeline con un clasificador tree-based
+        (GradientBoostingClassifier / RandomForest). En cualquier otro caso,
+        deja _shap_explainer en None y el endpoint omite las contribuciones.
+        """
+        cls._shap_explainer = None
+        cls._shap_feature_names = None
+        if not _SHAP_AVAILABLE:
+            logger.info("SHAP no instalado: feature_contributions deshabilitado.")
+            return
+        try:
+            # Necesitamos un Pipeline con named_steps 'preprocessor' y 'classifier'.
+            pipeline = cls.model
+            if not hasattr(pipeline, "named_steps"):
+                logger.info("Modelo no es un Pipeline; SHAP omitido.")
+                return
+            classifier = pipeline.named_steps.get("classifier")
+            preprocessor = pipeline.named_steps.get("preprocessor")
+            if classifier is None or preprocessor is None:
+                logger.info("Pipeline sin 'classifier' o 'preprocessor'; SHAP omitido.")
+                return
+            # Solo tiene sentido con tree-based (GB / RF). Para LR el explainer
+            # es distinto (Linear) y daria explicaciones menos utiles.
+            from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+            if not isinstance(classifier, (GradientBoostingClassifier, RandomForestClassifier)):
+                logger.info(
+                    "Clasificador %s no es tree-based; SHAP omitido.",
+                    type(classifier).__name__,
+                )
+                return
+            # Cargar background si existe (persiste ml-training/train_from_real.py).
+            # Si no, usar tree_path_dependent que no requiere background.
+            background = None
+            try:
+                if BACKGROUND_PATH.exists():
+                    background = joblib.load(BACKGROUND_PATH)
+                    logger.info("SHAP background cargado (%d filas).", len(background))
+            except Exception as e:
+                logger.warning("No se pudo cargar background SHAP: %s", e)
+                background = None
+            try:
+                cls._shap_explainer = shap.TreeExplainer(
+                    classifier,
+                    background,
+                    feature_perturbation="interventional" if background is not None else "tree_path_dependent",
+                )
+            except TypeError:
+                # Fallback para versiones de SHAP que no aceptan positional background.
+                cls._shap_explainer = shap.TreeExplainer(classifier)
+            # Nombres de las features post-transform (post ColumnTransformer).
+            try:
+                cls._shap_feature_names = list(preprocessor.get_feature_names_out())
+            except Exception:
+                cls._shap_feature_names = None
+            logger.info(
+                "SHAP TreeExplainer inicializado (%d features post-transform).",
+                len(cls._shap_feature_names or []),
+            )
+        except Exception as e:
+            # Cualquier excepcion aqui es no-fatal: log warning y seguir sin SHAP.
+            logger.warning("No se pudo inicializar SHAP: %s", e)
+            cls._shap_explainer = None
+            cls._shap_feature_names = None
 
     @classmethod
     def set_db_connected(cls, connected: bool):
@@ -122,6 +207,9 @@ class PredictionService:
             # Generar recomendación
             recomendacion = cls._generate_recommendation(resultado, student_data)
 
+            # Contribuciones SHAP por feature (devuelve [] si SHAP no esta disponible).
+            feature_contributions = cls._compute_shap_contributions(features, resultado)
+
             # Crear respuesta
             response = PredictionResponse(
                 resultado=resultado,
@@ -131,6 +219,7 @@ class PredictionService:
                 timestamp=datetime.now(),
                 model_version=MODEL_VERSION,
                 probabilities=probs_by_class,
+                feature_contributions=feature_contributions,
             )
 
             # Guardar predicción en BD si está conectada
@@ -184,6 +273,66 @@ class PredictionService:
             'promedio_ingles_nivel': student_data.promedio_ingles_nivel,
         }])
         return features
+
+    @classmethod
+    def _compute_shap_contributions(
+        cls, features: pd.DataFrame, predicted_class: str
+    ) -> List[FeatureContribution]:
+        """
+        Calcula las contribuciones SHAP por feature para la clase predicha.
+
+        Devuelve una lista ordenada desc por |contribution|. Si SHAP no esta
+        disponible, devuelve lista vacia (feature_contributions en la respuesta
+        queda como [] y la UI simplemente no muestra la seccion).
+        """
+        if cls._shap_explainer is None or cls.model is None:
+            return []
+        try:
+            pipeline = cls.model
+            preprocessor = pipeline.named_steps["preprocessor"]
+            # Transformar al espacio que ve el clasificador (post ColumnTransformer).
+            X_transformed = preprocessor.transform(features)
+            shap_values = cls._shap_explainer.shap_values(X_transformed)
+
+            # shap_values puede venir en 3 formatos segun version de SHAP:
+            #   - list of 2D arrays (multiclass antiguo): len = n_classes
+            #   - 3D array (n_samples, n_features, n_classes): SHAP >=0.45 multiclass
+            #   - 2D array (n_samples, n_features): regresion o binario
+            classes = list(pipeline.classes_)
+            try:
+                predicted_idx = classes.index(predicted_class)
+            except ValueError:
+                predicted_idx = 0
+
+            if isinstance(shap_values, list):
+                contrib_row = np.asarray(shap_values[predicted_idx])[0]
+            else:
+                arr = np.asarray(shap_values)
+                if arr.ndim == 3:
+                    contrib_row = arr[0, :, predicted_idx]
+                elif arr.ndim == 2:
+                    # Binario: hay un solo set de contribuciones
+                    contrib_row = arr[0]
+                else:
+                    return []
+
+            names = cls._shap_feature_names
+            if names is None or len(names) != len(contrib_row):
+                names = [f"feature_{i}" for i in range(len(contrib_row))]
+
+            rows = [
+                FeatureContribution(
+                    feature=name,
+                    contribution=float(c),
+                    abs_contribution=abs(float(c)),
+                )
+                for name, c in zip(names, contrib_row)
+            ]
+            rows.sort(key=lambda r: r.abs_contribution, reverse=True)
+            return rows
+        except Exception as e:
+            logger.warning("Fallo calculo SHAP, omitiendo contribuciones: %s", e)
+            return []
 
     @classmethod
     def _generate_demo_prediction(cls, features: np.ndarray) -> tuple:

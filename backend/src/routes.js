@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import path from 'path'
 import fs from 'fs'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'url'
 import { pool } from './db.js'
 import {
@@ -33,10 +34,12 @@ import {
   getProfile,
   listCohort,
   listPredictions,
+  getReportSummary,
   savePrediction,
   upsertProfile,
 } from './profiles.js'
 import { computePrediction } from './predictor.js'
+import { parseCsvRow, validateRow, splitMetadata } from './lib/csv-to-profile.js'
 import {
   buildGoogleAuthUrl,
   exchangeCodeForProfile,
@@ -56,13 +59,23 @@ function isInstitutionalEmail(email) {
   return typeof email === 'string' && email.trim().toLowerCase().endsWith(INSTITUTIONAL_DOMAIN)
 }
 // Roles administrativos que pueden iniciar sesion con correo no institucional
-// (cuentas de gestion existentes: rector, decano, profesor, administrador).
-const ADMIN_ROLES = new Set(['rector', 'decano', 'profesor', 'administrador'])
+// (cuentas de gestion existentes: rector, decano, administrador).
+const ADMIN_ROLES = new Set(['rector', 'decano', 'administrador'])
 // Nombre: letras (incluye acentos y ñ) + espacios + apóstrofo/guion.
 // Permite el punto solo como abreviación (e.g. "Dr.", "Prof.", "Dra.").
 const NAME_RE =
   /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?)*$/
 const DOCUMENTO_RE = /^\d{5,15}$/
+
+// Hash truncado de un identificador (email o documento). Se usa en logs
+// para evitar guardar el dato crudo pero permitir correlacionar intentos.
+function hashIdentifier(value) {
+  return crypto
+    .createHash('sha256')
+    .update(String(value || '').toLowerCase().trim())
+    .digest('hex')
+    .slice(0, 12)
+}
 
 function validateName(name) {
   const value = (name || '').trim()
@@ -200,6 +213,13 @@ router.post('/auth/login', async (req, res) => {
 
     const user = await findUserByEmailOrDocumento(rawId)
     if (!user) {
+      // Auditoria: intento de login con identificador desconocido.
+      // Guardamos solo el hash del identificador para no exponer el dato crudo.
+      insertAuditLog(pool, {
+        accion: 'LOGIN_FAIL',
+        detalles: { reason: 'no_user', identifier_hash: hashIdentifier(rawId) },
+        userAgent: req.headers['user-agent'],
+      }).catch((e) => console.error('[audit] failed:', e.message))
       return res.status(401).json({
         ok: false,
         message: 'No existe una cuenta registrada con ese usuario.',
@@ -223,35 +243,153 @@ router.post('/auth/login', async (req, res) => {
       })
     }
 
-    // Politica institucional: solo se permite el ingreso con correo
-    // @unac.edu.co. Excepcion: cuentas administrativas (rector, decano,
-    // profesor) que existan previamente con otro dominio.
-    if (!ADMIN_ROLES.has(user.role) && !isInstitutionalEmail(user.email)) {
-      return res.status(403).json({
-        ok: false,
-        message: 'El sistema solo permite el ingreso con correo institucional (@unac.edu.co).',
-      })
+    // Politica de email:
+    //  - Admins (rector/decano/administrador): exentos.
+    //  - Estudiantes: el CSV identificado es el roster autoritativo. Si
+    //    findUserByEmailOrDocumento encontro al usuario, su correo ya fue
+    //    cargado desde el CSV por import-students-v2.js. Aceptamos cualquier
+    //    dominio (Gmail, institucionales, etc.) sin restringir.
+    //  - Otros roles no-admin: defensa en profundidad, mantener @unac.edu.co.
+    if (!ADMIN_ROLES.has(user.role)) {
+      if (user.role !== 'estudiante' && !isInstitutionalEmail(user.email)) {
+        return res.status(403).json({
+          ok: false,
+          message: 'El sistema solo permite el ingreso con correo institucional (@unac.edu.co).',
+        })
+      }
     }
 
     const okPass = await verifyPassword(password, user.password_hash)
     if (!okPass) {
+      insertAuditLog(pool, {
+        adminId: user.id,
+        adminEmail: user.email,
+        accion: 'LOGIN_FAIL',
+        detalles: { reason: 'bad_password' },
+        userAgent: req.headers['user-agent'],
+      }).catch((e) => console.error('[audit] failed:', e.message))
       return res.status(401).json({ ok: false, message: 'La contrasena es incorrecta.' })
     }
 
     const safe = sanitizeUserRow(user)
     const token = signToken({ sub: safe.id, role: safe.role, email: safe.email })
 
+    insertAuditLog(pool, {
+      adminId: safe.id,
+      adminEmail: safe.email,
+      accion: 'LOGIN_SUCCESS',
+      detalles: { role: safe.role },
+      userAgent: req.headers['user-agent'],
+    }).catch((e) => console.error('[audit] failed:', e.message))
+
+    // Lazy fallback: si el estudiante no tiene perfil completado (p.ej. el
+    // loader no corrió para esta fila), buscamos su fila en
+    // dataset_saber_pro_real por email, completamos perfil y prediccion.
+    // Si falla, NO rompemos el login: el estudiante podrá navegar y el
+    // admin podrá correr /admin/recompute-predictions despues.
+    let studentPrediction = null
+    if (safe.role === 'estudiante') {
+      studentPrediction = await ensureStudentPredictionOnLogin(safe.id, req.headers['user-agent'])
+    }
+
     return res.json({
       ok: true,
       message: `Acceso correcto como ${safe.role}.`,
       token,
       user: safe,
+      prediction: studentPrediction,
     })
   } catch (err) {
     console.error('[auth/login] error:', err)
     return res.status(500).json({ ok: false, message: 'Error iniciando sesion.' })
   }
 })
+
+// =====================================================================
+// Lazy fallback: completar perfil + prediccion al login del estudiante.
+//
+// Si el usuario es estudiante y aun no tiene perfil completado, buscamos
+// su fila en dataset_saber_pro_real por el email de su cuenta. Si la
+// encontramos, construimos el perfil desde el CSV, lo persistimos con
+// completed=true, computamos la prediccion y la guardamos.
+//
+// Devuelve la prediccion guardada (row de la tabla predictions) o null
+// si no se pudo completar (registro no encontrado, error de parseo,
+// fallo del predictor, etc.). NUNCA lanza: un fallo aqui NO rompe el login.
+// =====================================================================
+async function ensureStudentPredictionOnLogin(userId, userAgent) {
+  try {
+    const existing = await getProfile(userId)
+    if (existing && existing.completed) return null
+
+    const user = await findUserById(userId)
+    if (!user) return null
+    const email = (user.email || '').trim().toLowerCase()
+    if (!email) return null
+
+    const { rows } = await pool.query(
+      `SELECT nombres, identificacion, correo, carnet,
+              promedio_acumulado, promedio_materias_basicas,
+              promedio_programacion, promedio_matematica_estadistica,
+              semestre_actual, porcentaje_avance,
+              asignaturas_reprobadas, creditos_aprobados,
+              asignaturas_aprobadas, estrato, condicion_laboral_raw,
+              genero, edad, ciudad_residencia_actual, promedio_ingles_raw
+         FROM dataset_saber_pro_real
+        WHERE LOWER(correo) = $1
+        LIMIT 1`,
+      [email],
+    )
+    if (!rows.length) {
+      console.warn(`[lazy-fallback] user_id=${userId} email=${email} sin fila en CSV`)
+      return null
+    }
+    const csvRow = rows[0]
+    // Reconstruir el shape "raw" que espera parseCsvRow (DictReader-style).
+    const raw = {
+      NOMBRES: csvRow.nombres,
+      IDENTIFICACION: csvRow.identificacion,
+      CORREO: csvRow.correo,
+      CARNET: csvRow.carnet,
+      SEMESTRE_ACTUAL: csvRow.semestre_actual,
+      PORCENTAJE_AVANCE: csvRow.porcentaje_avance,
+      PROMEDIO_ACUMULADO: csvRow.promedio_acumulado,
+      PROMEDIO_MATERIAS_BASICAS: csvRow.promedio_materias_basicas,
+      PROMEDIO_PROGRAMACION: csvRow.promedio_programacion,
+      PROMEDIO_MATEMATICA_ESTADISTICA: csvRow.promedio_matematica_estadistica,
+      ASIGNATURAS_REPROBADAS: csvRow.asignaturas_reprobadas,
+      CREDITOS_APROBADOS: csvRow.creditos_aprobados,
+      ASIGNATURAS_APROBADAS: csvRow.asignaturas_aprobadas,
+      ESTRATO: csvRow.estrato,
+      CONDICION_LABORAL: csvRow.condicion_laboral_raw,
+      GENERO: csvRow.genero,
+      EDAD: csvRow.edad,
+      CIUDAD_RESIDENCIA_ACTUAL: csvRow.ciudad_residencia_actual,
+      PROMEDIO_INGLES: csvRow.promedio_ingles_raw,
+    }
+    const parsed = parseCsvRow(raw)
+    const validation = validateRow(parsed)
+    if (!validation.ok) {
+      console.warn(`[lazy-fallback] user_id=${userId} validate fallo: ${validation.reason}`)
+      return null
+    }
+    const { profileFields } = splitMetadata(validation.data)
+    const profile = await upsertProfile(userId, profileFields)
+    const prediction = await computePrediction(profile)
+    const saved = await savePrediction(userId, prediction)
+    insertAuditLog(pool, {
+      adminId: userId,
+      adminEmail: user.email,
+      accion: 'STUDENT_LAZY_PROVISION',
+      detalles: { source: 'dataset_saber_pro_real' },
+      userAgent: userAgent || null,
+    }).catch((e) => console.error('[audit] failed:', e.message))
+    return saved
+  } catch (err) {
+    console.error('[lazy-fallback] error:', err.message)
+    return null
+  }
+}
 
 // GET /api/auth/me
 router.get('/auth/me', requireAuth, async (req, res) => {
@@ -280,6 +418,14 @@ router.post('/auth/recover', async (req, res) => {
       return res.status(400).json({ ok: false, message: 'Usuario requerido.' })
     }
     const user = await findUserByEmailOrDocumento(value)
+    insertAuditLog(pool, {
+      accion: 'RECOVER_REQUEST',
+      detalles: {
+        found: !!user,
+        identifier_hash: hashIdentifier(value),
+      },
+      userAgent: req.headers['user-agent'],
+    }).catch((e) => console.error('[audit] failed:', e.message))
     if (!user) {
       return res
         .status(404)
@@ -512,6 +658,12 @@ router.patch('/auth/me/password', requireAuth, async (req, res) => {
 
     const newHash = await hashPassword(newPassword.trim())
     const updated = await updatePasswordHash(req.userId, newHash)
+    insertAuditLog(pool, {
+      adminId: user.id,
+      adminEmail: user.email,
+      accion: 'PASSWORD_CHANGE',
+      userAgent: req.headers['user-agent'],
+    }).catch((e) => console.error('[audit] failed:', e.message))
     return res.json({
       ok: true,
       message: 'Contrasena actualizada.',
@@ -636,7 +788,7 @@ router.get('/cohort/students', requireAuth, async (req, res) => {
   try {
     const me = await findUserById(req.userId)
     if (!me) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
-    if (!['rector', 'decano', 'profesor', 'administrador'].includes(me.role)) {
+    if (!['rector', 'decano', 'administrador'].includes(me.role)) {
       return res
         .status(403)
         .json({ ok: false, message: 'No autorizado para ver la cohorte.' })
@@ -709,6 +861,21 @@ router.get('/admin/stats', requireAuth, requireAdmin, async (req, res) => {
   }
 })
 
+// GET /api/admin/report-summary?program=sistemas|all
+// Devuelve agregaciones especificas para el panel de Reportes:
+// distribuciones (ingles, genero, estrato, etc.), histograma de puntaje,
+// promedios academicos y top N mejor/peor predicho.
+router.get('/admin/report-summary', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const program = req.query.program ? String(req.query.program) : 'all'
+    const summary = await getReportSummary({ program })
+    return res.json({ ok: true, ...summary })
+  } catch (err) {
+    console.error('[admin/report-summary] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error generando el resumen.' })
+  }
+})
+
 // POST /api/admin/recompute-predictions
 // Regenera la prediccion para TODOS los estudiantes con perfil completed.
 // Util despues de cargas masivas (ETL desde SQL Server) o cambios en el predictor.
@@ -741,6 +908,7 @@ router.post('/admin/recompute-predictions', requireAuth, requireAdmin, async (re
       targetId: null,
       targetDocumento: null,
       detalles: { accion: 'recompute_predictions', total: students.length, ok, err },
+      userAgent: req.headers['user-agent'],
     }).catch(() => {})
     return res.json({ ok: true, total: students.length, generated: ok, errors: err })
   } catch (err) {
@@ -789,7 +957,7 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     const emailError = validateEmail(email)
     if (emailError) return res.status(400).json({ ok: false, message: emailError })
 
-    if (!['rector', 'decano', 'profesor', 'administrador', 'estudiante'].includes(role)) {
+    if (!['rector', 'decano', 'administrador', 'estudiante'].includes(role)) {
       return res.status(400).json({ ok: false, message: 'Rol invalido.' })
     }
     if (!['sistemas', 'industrial', 'all'].includes(program)) {
@@ -836,6 +1004,7 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
         targetId: row.id,
         targetDocumento: row.documento,
         detalles: { accion, role, program: safeProgram },
+        userAgent: req.headers['user-agent'],
       })
       await client.query('COMMIT')
       return res
@@ -880,7 +1049,7 @@ router.patch('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => 
       }
     }
     if (role !== undefined) {
-      if (!['rector', 'decano', 'profesor', 'administrador', 'estudiante'].includes(role)) {
+      if (!['rector', 'decano', 'administrador', 'estudiante'].includes(role)) {
         return res.status(400).json({ ok: false, message: 'Rol invalido.' })
       }
       updates.role = role
@@ -915,6 +1084,7 @@ router.patch('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => 
       targetId: id,
       targetDocumento: updated.documento,
       detalles: { before, after, fields: Object.keys(updates) },
+      userAgent: req.headers['user-agent'],
     })
     return res.json({ ok: true, user: sanitizeUserRow(updated) })
   } catch (err) {
@@ -952,6 +1122,7 @@ router.post('/admin/users/:id/deactivate', requireAuth, requireAdmin, async (req
       targetId: id,
       targetDocumento: updated.documento,
       detalles: { role: updated.role },
+      userAgent: req.headers['user-agent'],
     })
     return res.json({ ok: true, user: sanitizeUserRow(updated) })
   } catch (err) {
@@ -977,6 +1148,7 @@ router.post('/admin/users/:id/activate', requireAuth, requireAdmin, async (req, 
       targetId: id,
       targetDocumento: updated.documento,
       detalles: { role: updated.role },
+      userAgent: req.headers['user-agent'],
     })
     return res.json({ ok: true, user: sanitizeUserRow(updated) })
   } catch (err) {
@@ -994,7 +1166,17 @@ router.get('/admin/audit', requireAuth, requireAdmin, async (req, res) => {
     if (limit > 200) limit = 200
     if (!Number.isFinite(offset) || offset < 0) offset = 0
     const adminEmail = req.query.adminEmail ? String(req.query.adminEmail) : undefined
-    const { rows, total } = await listAuditLog({ limit, offset, adminEmail })
+    const accion = req.query.accion ? String(req.query.accion) : undefined
+    const createdAtFrom = req.query.createdAtFrom ? String(req.query.createdAtFrom) : undefined
+    const createdAtTo = req.query.createdAtTo ? String(req.query.createdAtTo) : undefined
+    const { rows, total } = await listAuditLog({
+      limit,
+      offset,
+      adminEmail,
+      accion,
+      createdAtFrom,
+      createdAtTo,
+    })
     return res.json({ ok: true, entries: rows, total, limit, offset })
   } catch (err) {
     console.error('[admin/audit] error:', err)
@@ -1109,6 +1291,140 @@ router.post('/analysis/predict', requireAuth, requireAdmin, async (req, res) => 
       detail: err.message,
     })
   }
+})
+
+// Columnas del modelo que se auditan en el data quality dashboard.
+// Mantener alineado con ml-training/train_from_real.py NUMERIC_FEATURES + CATEGORICAL_FEATURES.
+const DQ_NUMERIC_COLUMNS = [
+  'promedio_materias_basicas',
+  'promedio_ingenieria',
+  'promedio_programacion',
+  'promedio_matematica_estadistica',
+  'asignaturas_reprobadas',
+  'porcentaje_avance',
+  'semestre_actual',
+  'estrato',
+  'creditos_aprobados',
+  'asignaturas_aprobadas',
+  'edad',
+  'promedio_acumulado',
+]
+const DQ_CATEGORICAL_COLUMNS = ['genero', 'promedio_ingles_nivel']
+const DQ_CATEGORICAL_HISTOGRAMS = ['genero', 'estrato', 'promedio_ingles_nivel']
+
+// GET /api/analysis/data-quality
+// Devuelve % de nulos por columna + histogramas de categoricos.
+// 2 queries a la BD: una para nulos, otra para histogramas.
+router.get('/analysis/data-quality', requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const totalQ = await pool.query('SELECT COUNT(*)::int AS n FROM dataset_saber_pro_real')
+    const total = totalQ.rows[0].n
+
+    // Query 1: null counts para todas las columnas del modelo en una sola pasada.
+    const nullParts = []
+    const nullCols = [...DQ_NUMERIC_COLUMNS, ...DQ_CATEGORICAL_COLUMNS]
+    for (const col of nullCols) {
+      nullParts.push(
+        `COUNT(*) FILTER (WHERE ${col} IS NULL) AS n_${col.replace(/[^a-z0-9_]/gi, '_')}`,
+      )
+    }
+    const nullSql = `SELECT ${nullParts.join(', ')} FROM dataset_saber_pro_real`
+    const nullRes = await pool.query(nullSql)
+
+    const nulls = {}
+    for (const col of nullCols) {
+      nulls[col] = Number(nullRes.rows[0][`n_${col.replace(/[^a-z0-9_]/gi, '_')}`] || 0)
+    }
+
+    // Query 2: histogramas (1 query por columna para no inflar SQL).
+    const categoricals = {}
+    for (const col of DQ_CATEGORICAL_HISTOGRAMS) {
+      const r = await pool.query(
+        `SELECT ${col}::text AS bucket, COUNT(*)::int AS n
+           FROM dataset_saber_pro_real
+          WHERE ${col} IS NOT NULL
+          GROUP BY ${col}
+          ORDER BY ${col}`,
+      )
+      categoricals[col] = {}
+      for (const row of r.rows) categoricals[col][row.bucket] = row.n
+    }
+
+    // Totales derivados (alineados con analysis/dataset-stats).
+    const validQ = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE promedio_acumulado IS NOT NULL AND promedio_acumulado > 0)::int AS used,
+        COUNT(*) FILTER (WHERE promedio_acumulado = 0 OR promedio_acumulado IS NULL)::int AS excluded
+      FROM dataset_saber_pro_real
+    `)
+
+    return res.json({
+      ok: true,
+      totals: {
+        rows: total,
+        used: validQ.rows[0].used,
+        excluded: validQ.rows[0].excluded,
+      },
+      nulls,
+      null_columns: nullCols,
+      categoricals,
+    })
+  } catch (err) {
+    console.error('[analysis/data-quality] error:', err)
+    return res.status(500).json({ ok: false, message: 'Error consultando BD.' })
+  }
+})
+
+// Helper: escapa una celda para CSV (RFC 4180): wrap en comillas y duplicar comillas internas.
+function csvCell(value) {
+  if (value === null || value === undefined) return ''
+  const s = String(value)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+function csvRow(cells) {
+  return cells.map(csvCell).join(',')
+}
+
+// GET /api/analysis/export/metrics.csv
+// Devuelve las metricas de los 2 modelos (LR, GB) en CSV: 2 filas x 7 columnas.
+// Pensado para que el jurado / tutor se lleve el resumen a Excel.
+router.get('/analysis/export/metrics.csv', requireAuth, requireAdmin, async (_req, res) => {
+  const metrics = loadMetricsJson()
+  if (!metrics) {
+    return res.status(404).json({
+      ok: false,
+      message: 'No se encontro desercion_metrics.json. Corre ml/train_from_real.py.',
+    })
+  }
+  const header = [
+    'model', 'accuracy', 'precision_weighted', 'recall_weighted',
+    'f1_weighted', 'roc_auc_ovr_weighted', 'is_best',
+  ]
+  const lines = [csvRow(header)]
+  for (const [name, m] of Object.entries(metrics.all_models || {})) {
+    lines.push(csvRow([
+      name,
+      m.accuracy?.toFixed?.(6) ?? '',
+      m.precision_weighted?.toFixed?.(6) ?? '',
+      m.recall_weighted?.toFixed?.(6) ?? '',
+      m.f1_weighted?.toFixed?.(6) ?? '',
+      m.roc_auc_ovr_weighted?.toFixed?.(6) ?? '',
+      name === metrics.best_model ? '1' : '0',
+    ]))
+  }
+  // Audit log: registrar exportacion (trazabilidad institucional).
+  insertAuditLog(pool, {
+    adminId: _req.userId,
+    adminEmail: _req.adminUser?.email,
+    accion: 'EXPORT_METRICS_CSV',
+    detalles: { rows: lines.length - 1 },
+    userAgent: _req.headers['user-agent'],
+  }).catch((e) => console.error('[audit] failed:', e.message))
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="saberpro_metrics.csv"')
+  return res.send(lines.join('\n') + '\n')
 })
 
 export default router

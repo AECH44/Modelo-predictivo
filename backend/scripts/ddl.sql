@@ -57,3 +57,30 @@ CREATE INDEX IF NOT EXISTS idx_dataset_real_edad    ON dataset_saber_pro_real(ed
 
 COMMENT ON TABLE dataset_saber_pro_real IS
   'Dataset real (anonimo) cargado desde base-de-datos-para-proyecto-de-grado-Ing.csv para entrenamiento/validacion del Modelo Predictivo Saber Pro. No contiene PII.';
+-- =====================================================================
+-- Tabla de auditoria (audit_log).
+-- Schema original (2026-10-02) + columna user_agent agregada 2026-10-09.
+-- Aplicar de forma idempotente: este DDL es seguro de correr varias veces.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id               INTEGER       PRIMARY KEY,
+    admin_id         INTEGER       REFERENCES usuarios(id) ON DELETE SET NULL,
+    admin_email      VARCHAR(255),
+    accion           VARCHAR(60)   NOT NULL,
+    target_id        INTEGER,
+    target_documento VARCHAR(20),
+    detalles         JSONB         NOT NULL DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMP     NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_agent TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_admin_id    ON audit_log(admin_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at  ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target_id   ON audit_log(target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_admin_email ON audit_log(admin_email);
+CREATE INDEX IF NOT EXISTS idx_audit_log_accion      ON audit_log(accion);
+
+COMMENT ON TABLE audit_log IS
+  'Bitacora de acciones: logins, cambios de password, recuperacion, gestion admin, exports CSV.';

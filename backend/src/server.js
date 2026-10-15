@@ -22,6 +22,9 @@ const ANALYSIS_DIR = path.join(
   'ml-training', 'analysis',
 )
 
+// URL del servicio FastAPI que sirve el modelo ML real.
+const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000'
+
 const app = express()
 
 app.use(
@@ -46,13 +49,40 @@ app.use(
   }),
 )
 
+// Health check unificado: reporta Express + DB + FastAPI.
+// Pensado para que el panel admin muestre el estado de los 3 servicios en un vistazo.
+// `model_version` se lee del mismo desercion_metrics.json que el panel Analisis.
 app.get('/api/health', async (_req, res) => {
+  const dbStatus = await testConnection().then(() => 'connected').catch(() => 'disconnected')
+  // Ping FastAPI con timeout duro (1.5s) para no colgar el health check.
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 1500)
+  let fastapi = 'down'
+  let modelLoaded = false
+  let modelVersion = null
   try {
-    await testConnection()
-    res.json({ ok: true, status: 'up', db: 'connected' })
-  } catch (err) {
-    res.status(500).json({ ok: false, status: 'up', db: 'disconnected', error: err.message })
+    const r = await fetch(`${FASTAPI_URL}/api/health`, { signal: ctl.signal })
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}))
+      fastapi = data.status === 'healthy' ? 'up' : 'degraded'
+      modelLoaded = data.model_loaded === true
+      modelVersion = data.model_version || null
+    } else {
+      fastapi = 'down'
+    }
+  } catch {
+    fastapi = 'down'
+  } finally {
+    clearTimeout(timer)
   }
+  res.json({
+    ok: true,
+    express: 'up',
+    db: dbStatus,
+    fastapi,
+    model_loaded: modelLoaded,
+    model_version: modelVersion,
+  })
 })
 
 app.use('/api', routes)

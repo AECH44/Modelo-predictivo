@@ -1,19 +1,21 @@
 /**
- * Asegura en BD las 4 cuentas administrativas del proyecto:
+ * Asegura en BD las cuentas administrativas del proyecto:
  *   - Rector:        documento 91497570  rectoria@unac.edu.co           role=rector
  *   - Decano:        documento 91475722  facultad.ingenieria@unac.edu.co role=decano
- *   - Profesor:      documento 7702661   javierf.cordobap@unac.edu.co   role=profesor
- *   - Administrador: documento 1001417605 jhanc.mesae@unac.edu.co        role=administrador
+ *   - Administrador: documento 99000001  admin.saberpro@unac.edu.co     role=administrador (pwd custom)
+ *
+ * Adicionalmente, demueve al estudiante MESA ESCOBAR JHAN CARLOS
+ * (jhanc.mesae@unac.edu.co / doc 1001417605) desde administrador a
+ * estudiante, para que reciba su prediccion al iniciar sesion con
+ * su contrasena habitual.
  *
  * Comportamiento:
  *   - Si el usuario ya existe por documento, actualiza su nombre, email,
- *     rol y program. Resetea el password al mismo documento (politica
- *     institucional: password = documento).
- *   - Si el usuario ya existe por email (con otro documento), se actualiza
- *     el documento al indicado y se hace lo mismo. Asi cubrimos el caso
- *     del administrador: el correo jhanc.mesae@unac.edu.co ya existe
- *     asociado al documento 123456789 — lo migramos a 1001417605.
- *   - Si no existe, lo crea con password = hash(documento).
+ *     rol, program y password_hash.
+ *   - Si no existe, lo crea.
+ *   - Las cuentas administrativas usan como password el documento
+ *     (politica institucional), salvo el admin custom que tiene su propia
+ *     contrasena.
  *
  * Idempotente: se puede correr cuantas veces se quiera.
  *
@@ -22,6 +24,8 @@
  */
 import { pool, testConnection } from '../db.js'
 import { hashPassword } from '../auth.js'
+
+const NEW_ADMIN_PASSWORD = 'SaberPro_Admin_2026!'
 
 const ADMINS = [
   {
@@ -39,23 +43,44 @@ const ADMINS = [
     program: 'all',
   },
   {
-    role: 'profesor',
-    documento: '7702661',
-    username: 'CÓRDOBA PERDOMO JAVIER FRANCISCO',
-    email: 'javierf.cordobap@unac.edu.co',
-    program: 'sistemas',
-  },
-  {
     role: 'administrador',
-    documento: '1001417605',
-    username: 'MESA ESCOBAR JHAN CARLOS',
-    email: 'jhanc.mesae@unac.edu.co',
+    documento: '99000001',
+    username: 'ADMIN SABER PRO',
+    email: 'admin.saberpro@unac.edu.co',
     program: 'all',
+    customPassword: NEW_ADMIN_PASSWORD,
   },
 ]
 
-async function upsertAdmin({ role, documento, username, email, program }) {
-  const passwordHash = await hashPassword(documento)
+async function demoteAdminToEstudiante() {
+  // Cambia el rol del antiguo admin (estudiante del CSV) a estudiante
+  // para que reciba su prediccion al iniciar sesion con su contrasena
+  // habitual (que ya esta hasheada en la BD).
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const r = await client.query(
+      `UPDATE usuarios
+          SET role = 'estudiante', program = 'sistemas', updated_at = NOW()
+        WHERE LOWER(email) = LOWER($1)
+          AND role = 'administrador'
+        RETURNING id, documento, email, username`,
+      ['jhanc.mesae@unac.edu.co'],
+    )
+    await client.query('COMMIT')
+    return r.rows
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+async function upsertAdmin({ role, documento, username, email, program, customPassword }) {
+  // Si el admin tiene customPassword se usa esa; si no, password = documento
+  // (politica institucional tradicional).
+  const passwordHash = await hashPassword(customPassword || documento)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -109,7 +134,17 @@ async function main() {
   console.log('[seed-admins] Conectando a la BD...')
   await testConnection()
 
-  console.log(`[seed-admins] Procesando ${ADMINS.length} cuentas administrativas...`)
+  console.log('[seed-admins] Demoviendo jhanc.mesae@unac.edu.co de administrador a estudiante...')
+  const demoted = await demoteAdminToEstudiante()
+  if (demoted.length) {
+    for (const u of demoted) {
+      console.log(`  [demovido] ${u.documento}  ${u.email}  ->  ${u.username} (rol=estudiante)`)
+    }
+  } else {
+    console.log('  [info] No se demovio a nadie (ya estaba como estudiante o no existe).')
+  }
+
+  console.log(`\n[seed-admins] Procesando ${ADMINS.length} cuentas administrativas...`)
   const results = []
   for (const a of ADMINS) {
     try {
@@ -124,10 +159,11 @@ async function main() {
   }
 
   console.log('\n================================================')
-  console.log('  CREDENCIALES (password = documento)')
+  console.log('  CREDENCIALES')
   console.log('================================================')
   for (const r of results) {
-    console.log(`  ${r.role.padEnd(13)}  doc: ${r.documento}  pwd: ${r.documento}  ${r.email}`)
+    const pwd = r.customPassword || r.documento
+    console.log(`  ${r.role.padEnd(13)}  correo: ${r.email.padEnd(38)}  pwd: ${pwd}`)
   }
 
   await pool.end()

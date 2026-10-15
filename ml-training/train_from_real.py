@@ -374,6 +374,20 @@ def main() -> None:
     out = train_and_evaluate(X, y)
     save_outputs(out, metrics_path, model_path, n_total, n_used)
 
+    # Persistir muestra de background para SHAP. TreeExplainer en modo
+    # 'interventional' la usa para estimar la varianza de las contribuciones.
+    # Tomamos 50 filas del set de entrenamiento (no del test) con semilla fija
+    # para que el background sea reproducible entre reentrenos.
+    background_dir = base_dir / "data"
+    background_dir.mkdir(parents=True, exist_ok=True)
+    background_path = background_dir / "background_sample.pkl"
+    X_train_bg, _, _, _ = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y,
+    )
+    bg = X_train_bg.sample(n=min(50, len(X_train_bg)), random_state=RANDOM_STATE)
+    joblib.dump(bg, background_path)
+    print(f"Background SHAP (muestra {len(bg)} filas) guardado en: {background_path}")
+
     print("\n" + "=" * 60)
     print("ENTRENAMIENTO COMPLETADO")
     print("=" * 60)

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+trained_models/
+models/
+analysis/
+data/
+Dockerfile
+.dockerignore
+tests/
+.pytest_cache/

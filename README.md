@@ -4,6 +4,9 @@ Sistema web para predecir el desempeño de estudiantes en las pruebas Saber Pro,
 basado en datos académicos y socioeconómicos. Proyecto de grado de la
 **Universidad Nacional Abierta y a Distancia (UNAC)**.
 
+![Tests](https://github.com/AECH44/Modelo-predictivo/actions/workflows/tests.yml/badge.svg)
+![Docker build](https://github.com/AECH44/Modelo-predictivo/actions/workflows/docker.yml/badge.svg)
+
 ## 🎯 Descripción
 
 El sistema entrena un modelo de Machine Learning (Gradient Boosting Classifier)
@@ -170,6 +173,28 @@ Crea 4 cuentas admin con política `password = número de documento`:
 | profesor      | javierf.cordobap@unac.edu.co       | 7702661        |
 | administrador | jhanc.mesae@unac.edu.co            | 1001417605     |
 
+### 4b. Importar estudiantes desde el CSV identificado
+
+```bash
+cd backend && node src/scripts/import-students-v2.js
+```
+
+Por defecto lee `data/base-de-datos-para-proyecto-de-grado-Ing-_1_.csv`. Flags útiles:
+
+- `--dry-run`: solo transformar y validar, no escribe en BD.
+- `--limit N`: procesa solo las primeras N filas (útil para smoke-tests).
+- `--reset`: re-hashea el password aunque el usuario exista.
+
+**Política institucional para estudiantes:**
+
+- **Usuario** = su correo electrónico (columna `CORREO` del CSV).
+- **Contraseña** = su número de documento (columna `IDENTIFICACION`).
+- El CSV es el roster autoritativo: cualquier correo presente en el CSV es aceptado, sin importar el dominio (Gmail, institucionales, etc.).
+- El script es idempotente: ejecutarlo varias veces no duplica cuentas.
+- Genera `data/credenciales_generadas.csv` con `documento,nombre,correo,carnet,programa,password,accion,prediction_ok` para entrega.
+
+> Si llega un estudiante sin perfil creado (p. ej. el loader omitió su fila), al hacer login el backend detecta la ausencia, busca su fila en `dataset_saber_pro_real`, completa el perfil y computa la predicción (lazy fallback). No requiere re-ejecutar el batch.
+
 ### 5. Arrancar los 3 servicios (en terminales separadas)
 
 ```bash
@@ -213,6 +238,29 @@ Después de re-entrenar, **reiniciar `ml-service`** para que recargue el `.pkl`.
 - [`docs/api-endpoints.md`](docs/api-endpoints.md) — Referencia de endpoints.
 - [`docs/integracion.md`](docs/integracion.md) — Cómo Express se integra con FastAPI.
 - [`docs/buenas-practicas.md`](docs/buenas-practicas.md) — Convenciones del proyecto.
+- [`DOCKER.md`](DOCKER.md) — Guía de uso con Docker Compose.
+- [`ml-service/SHAP_SETUP.md`](ml-service/SHAP_SETUP.md) — Activar explicabilidad SHAP.
+
+## 🧪 Tests automatizados
+
+51 tests en total, ~2 segundos de ejecucion. No requieren PostgreSQL ni el `.pkl`.
+
+```bash
+# Backend (Vitest, 19 tests)
+cd backend && npm test
+
+# ML Service (pytest, 32 tests)
+python -m pytest ml-service/tests/ -v
+```
+
+Cobertura:
+- **Backend**: auth (hash, verify, JWT), users (sanitize excluye password_hash),
+  predictor (heuristic deterministica + fallback cuando FastAPI no responde).
+- **ML Service**: Pydantic validation (rangos de las 13 features, defaults),
+  PredictionService helpers (`_prepare_features`, `_generate_recommendation`,
+  health check).
+
+Ver `tests/README.md` para detalle.
 
 ## 🔐 Stack
 

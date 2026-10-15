@@ -326,6 +326,7 @@ export async function setUserActiveState(id, isActive) {
 // =====================================================================
 
 // Helper: inserta una fila en audit_log. Acepta un client (transaccion) o el pool.
+// `userAgent` (opcional) requiere haber corrido `backend/scripts/apply-audit-ddl.sql`.
 export async function insertAuditLog(executor, {
   adminId,
   adminEmail,
@@ -333,18 +334,29 @@ export async function insertAuditLog(executor, {
   targetId,
   targetDocumento,
   detalles = {},
+  userAgent,
 }) {
   const det = typeof detalles === 'string' ? detalles : JSON.stringify(detalles)
+  const ua = userAgent || null
+  // detalles NOT NULL: nunca pasar null/undefined. userAgent puede ser null.
   await executor.query(
     `INSERT INTO audit_log
-       (admin_id, admin_email, accion, target_id, target_documento, detalles)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-    [adminId || null, adminEmail || null, accion, targetId || null, targetDocumento || null, det],
+       (admin_id, admin_email, accion, target_id, target_documento, detalles, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+    [
+      adminId || null,
+      adminEmail || null,
+      accion,
+      targetId || null,
+      targetDocumento || null,
+      det,
+      ua,
+    ],
   )
 }
 
 const AUDIT_COLUMNS = `id, admin_id, admin_email, accion, target_id,
-       target_documento, detalles, created_at`
+       target_documento, detalles, user_agent, created_at`
 
 function rowToAuditEntry(row) {
   return {
@@ -355,11 +367,25 @@ function rowToAuditEntry(row) {
     targetId: row.target_id,
     targetDocumento: row.target_documento,
     detalles: row.detalles,
+    userAgent: row.user_agent,
     createdAt: row.created_at,
   }
 }
 
-export async function listAuditLog({ limit = 50, offset = 0, targetId, adminEmail } = {}) {
+// Lista el audit_log con filtros combinables:
+// - targetId: ID exacto del usuario objetivo
+// - adminEmail: LIKE %email%
+// - accion: exacto (e.g. 'LOGIN_SUCCESS', 'USER_UPSERT')
+// - createdAtFrom / createdAtTo: rango de fechas (inclusive). Acepta Date o string ISO.
+export async function listAuditLog({
+  limit = 50,
+  offset = 0,
+  targetId,
+  adminEmail,
+  accion,
+  createdAtFrom,
+  createdAtTo,
+} = {}) {
   const where = []
   const params = []
   if (targetId) {
@@ -369,6 +395,18 @@ export async function listAuditLog({ limit = 50, offset = 0, targetId, adminEmai
   if (adminEmail) {
     params.push(`%${adminEmail}%`)
     where.push(`admin_email ILIKE $${params.length}`)
+  }
+  if (accion) {
+    params.push(accion)
+    where.push(`accion = $${params.length}`)
+  }
+  if (createdAtFrom) {
+    params.push(createdAtFrom)
+    where.push(`created_at >= $${params.length}`)
+  }
+  if (createdAtTo) {
+    params.push(createdAtTo)
+    where.push(`created_at <= $${params.length}`)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
   const totalRes = await pool.query(

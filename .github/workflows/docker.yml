@@ -1,0 +1,50 @@
+name: Docker build
+
+# Verifica que los Dockerfiles compilan correctamente tras cualquier cambio
+# en archivos relacionados con docker. NO publica imagenes; solo verifica
+# que el `docker compose build` no rompe.
+#
+# Si falla, el PR no se debe mergear hasta arreglar el Dockerfile.
+
+on:
+  pull_request:
+    paths:
+      - 'backend/Dockerfile'
+      - 'backend/.dockerignore'
+      - 'backend/package.json'
+      - 'backend/package-lock.json'
+      - 'frontend/Dockerfile'
+      - 'frontend/.dockerignore'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'ml-service/Dockerfile'
+      - 'ml-service/.dockerignore'
+      - 'ml-service/requirements.txt'
+      - 'ml-training/Dockerfile'
+      - 'ml-training/requirements.txt'
+      - 'docker-compose.yml'
+      - 'docker/**'
+      - '.github/workflows/docker.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: docker compose build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construir imagenes (postgres no se construye)
+        # El servicio postgres usa `postgres:18` directo, no Dockerfile.
+        # Por eso solo construimos los 3 servicios custom.
+        run: |
+          docker build -t saberpro-backend ./backend
+          docker build -t saberpro-frontend ./frontend
+          docker build -t saberpro-ml-service ./ml-service
+          docker build -t saberpro-ml-training ./ml-training
+
+      - name: Verificar docker-compose.yml valido
+        run: docker compose config --quiet

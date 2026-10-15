@@ -51,6 +51,14 @@ class StudentInput(BaseModel):
     promedio_ingles_nivel: str = Field(..., pattern="^(A1|A2|B1|B2|C1|C2)$")
 
 
+class FeatureContribution(BaseModel):
+    """Una contribucion SHAP para una feature individual."""
+    model_config = {'protected_namespaces': ()}
+    feature: str = Field(..., description="Nombre de la feature (post-transform)")
+    contribution: float = Field(..., description="Aporte a la log-probabilidad de la clase predicha")
+    abs_contribution: float = Field(..., description="Magnitud para ordenar de mayor a menor impacto")
+
+
 class PredictionResponse(BaseModel):
     """Respuesta de prediccion."""
     model_config = {
@@ -64,6 +72,10 @@ class PredictionResponse(BaseModel):
                 'timestamp': '2026-10-02T10:30:00',
                 'model_version': 'real-data-v1',
                 'probabilities': {'Bajo': 0.05, 'Medio': 0.87, 'Alto': 0.08},
+                'feature_contributions': [
+                    {'feature': 'num__promedio_ingenieria', 'contribution': 0.34, 'abs_contribution': 0.34},
+                    {'feature': 'cat__promedio_ingles_nivel_B2', 'contribution': -0.18, 'abs_contribution': 0.18},
+                ],
             }
         }
     }
@@ -75,6 +87,10 @@ class PredictionResponse(BaseModel):
     timestamp: datetime
     model_version: str = "real-data-v1"
     probabilities: dict = Field(default_factory=dict)
+    feature_contributions: List[FeatureContribution] = Field(
+        default_factory=list,
+        description="Lista ordenada desc por |contribution|. Vacia si SHAP no esta disponible.",
+    )
 
 
 class HealthResponse(BaseModel):

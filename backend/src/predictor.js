@@ -55,11 +55,12 @@ async function checkFastApi() {
 // ml/train_from_real.py). La UI actualmente envia campos del modelo
 // heuristico anterior; aqui hacemos el mapeo explicito.
 function profileToMlFeatures(profile) {
+  const fallbackPromedio = num(profile.promedio_acumulado, 3.0)
   return {
-    promedio_materias_basicas: num(profile.promedio_basicas, 3.0),
-    promedio_ingenieria: num(profile.promedio_ingenieria, num(profile.promedio_acumulado, 3.0)),
-    promedio_programacion: num(profile.promedio_ingenieria, num(profile.promedio_acumulado, 3.0)),
-    promedio_matematica_estadistica: num(profile.promedio_basicas, 3.0),
+    promedio_materias_basicas: num(profile.promedio_basicas, fallbackPromedio),
+    promedio_ingenieria: num(profile.promedio_ingenieria, fallbackPromedio),
+    promedio_programacion: num(profile.promedio_programacion, num(profile.promedio_ingenieria, fallbackPromedio)),
+    promedio_matematica_estadistica: num(profile.promedio_matematica_estadistica, num(profile.promedio_basicas, fallbackPromedio)),
     asignaturas_reprobadas: clamp(num(profile.num_reprobadas, 0), 0, 50),
     porcentaje_avance: clamp(num(profile.pct_creditos, 50), 0, 100),
     semestre_actual: clamp(num(profile.semestre, 5), 1, 12),
@@ -95,7 +96,12 @@ async function callMlPredict(profile) {
 
 // Traduce la respuesta de FastAPI al contrato del predictor JS.
 function mlResponseToContract(mlResp, profile) {
-  const clase = ['Bajo', 'Medio', 'Alto'].includes(mlResp.resultado) ? mlResp.resultado : 'medio'
+  // La columna `clase` en `predictions` tiene CHECK constraint que solo
+  // acepta valores lowercase: 'bajo' | 'medio' | 'alto'. Normalizamos
+  // inmediatamente al contrato canonico para evitar violar la constraint.
+  const allowed = ['Bajo', 'Medio', 'Alto']
+  const rawClase = allowed.includes(mlResp.resultado) ? mlResp.resultado : 'Medio'
+  const clase = rawClase.toLowerCase()
   const probabilidad = Number(mlResp.probabilidad) || 0.5
   const probs = mlResp.probabilities || {}
 
@@ -144,7 +150,12 @@ function mlResponseToContract(mlResp, profile) {
     areas,
     recomendaciones,
     snapshot: profile,
-    model_version: `real-data-v1-ml (${mlResp.model_version || 'fastapi'})`,
+    // La columna model_version es VARCHAR(20); truncamos para no romper el INSERT.
+    model_version: (() => {
+      const raw = mlResp.model_version || 'fastapi'
+      const cleaned = raw.replace(/[^a-zA-Z0-9._-]/g, '-').substring(0, 19)
+      return `ml-${cleaned}`.substring(0, 19)
+    })(),
     probabilities: probs,
   }
 }

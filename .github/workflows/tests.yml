@@ -1,0 +1,92 @@
+name: Tests
+
+# Corre en cada push a main y en cada PR hacia main.
+# Si falla cualquier job, el check se marca rojo y bloquea el merge
+# (si la branch protection esta configurada, lo cual se recomienda).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Evita corridas concurrentes para el mismo PR/push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend (Node 20, Vitest)
+  # 19 tests unitarios sobre auth, users, predictor.
+  # ---------------------------------------------------------------------------
+  backend-tests:
+    name: Backend (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # ML Service (Python 3.11, pytest)
+  # 32 tests sobre Pydantic models y helpers de prediction_service.
+  # ---------------------------------------------------------------------------
+  ml-service-tests:
+    name: ML Service (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ml-service/requirements.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Correr tests
+        run: pytest tests/ -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Frontend lint (ESLint)
+  # Verifica que el codigo cumple las convenciones del repo.
+  # ---------------------------------------------------------------------------
+  frontend-lint:
+    name: Frontend (ESLint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr ESLint
+        run: npm run lint

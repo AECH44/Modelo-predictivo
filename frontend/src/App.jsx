@@ -1,4 +1,13 @@
-import { useEffect, useState } from 'react'
+import {
+  Component,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Navigate,
   NavLink,
@@ -15,9 +24,12 @@ import {
   apiChangeMyPassword,
   apiDeactivateAdminUser,
   apiGetAdminAudit,
+  apiGetAdminReportSummary,
   apiGetAdminStats,
   apiGetAnalysisDatasetStats,
+  apiGetAnalysisDataQuality,
   apiGetAnalysisMetrics,
+  apiGetAnalysisMetricsCsv,
   apiGetCohort,
   apiGetGoogleAuthUrl,
   apiGetStudentPredictions,
@@ -32,6 +44,7 @@ import {
   apiUpdateAdminUser,
   apiUpdateProfile,
   apiUpsertAdminUser,
+  getToken,
   setToken as apiSetToken,
 } from './api.js'
 
@@ -39,11 +52,546 @@ const STORAGE_SESSION_KEY = 'saberpro.session'
 
 const PROGRAMS = {
   sistemas: 'Ingenieria de Sistemas',
-  industrial: 'Ingenieria Industrial',
 }
 
 const EMPTY_VALUE = ''
 
+// ---- User Agent parser (2026-10-09) ----
+// Convierte un string User-Agent en una etiqueta amigable tipo
+// "Chrome · Windows" o "Postman" (en vez de mostrar el string crudo
+// "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/...").
+// Devuelve { browser, os, isBot, isApi } para que la UI pueda decidir
+// que mostrar.
+function parseUserAgent(ua) {
+  if (!ua || typeof ua !== 'string') return { browser: 'desconocido', os: '', isBot: false, isApi: true }
+  // Bots / herramientas: curl, wget, Postman, python-requests, axios, etc.
+  const lc = ua.toLowerCase()
+  if (lc.includes('curl/')) return { browser: 'curl', os: '', isBot: true, isApi: true }
+  if (lc.includes('wget/')) return { browser: 'wget', os: '', isBot: true, isApi: true }
+  if (lc.includes('postman')) return { browser: 'Postman', os: '', isBot: false, isApi: true }
+  if (lc.includes('python-requests') || lc.includes('python-urllib') || lc.includes('python/'))
+    return { browser: 'Python', os: '', isBot: false, isApi: true }
+  if (lc.includes('node-fetch') || lc.includes('axios'))
+    return { browser: 'Node.js', os: '', isBot: false, isApi: true }
+  if (lc.includes('insomnia')) return { browser: 'Insomnia', os: '', isBot: false, isApi: true }
+
+  // Navegadores
+  let browser = 'desconocido'
+  if (lc.includes('edg/')) browser = 'Edge'
+  else if (lc.includes('opr/') || lc.includes('opera')) browser = 'Opera'
+  else if (lc.includes('firefox/')) browser = 'Firefox'
+  else if (lc.includes('chrome/') && !lc.includes('chromium')) browser = 'Chrome'
+  else if (lc.includes('safari/') && !lc.includes('chrome')) browser = 'Safari'
+  else if (lc.includes('samsungbrowser')) browser = 'Samsung'
+
+  // OS
+  let os = ''
+  if (lc.includes('windows nt')) os = 'Windows'
+  else if (lc.includes('mac os x') || lc.includes('macintosh')) os = 'macOS'
+  else if (lc.includes('android')) os = 'Android'
+  else if (lc.includes('iphone') || lc.includes('ipad')) os = 'iOS'
+  else if (lc.includes('linux')) os = 'Linux'
+
+  return { browser, os, isBot: false, isApi: false }
+}
+
+// Etiqueta corta del cliente: "Chrome · Windows" / "Postman" / "curl".
+function shortClientLabel(ua) {
+  const p = parseUserAgent(ua)
+  if (p.isApi) return p.browser   // "curl", "Postman", "Python"
+  if (p.os) return `${p.browser} · ${p.os}`
+  return p.browser
+}
+
+// ============================================================================
+// COMPONENTES UI REUTILIZABLES (Tier 1 UX, 2026-10-09)
+// ============================================================================
+
+// ---- Toast notifications ----
+const ToastContext = createContext(null)
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([])
+
+  const dismiss = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
+
+  const showToast = useCallback((opts) => {
+    const id = Date.now() + Math.random()
+    const toast = {
+      id,
+      type: opts.type || 'info',
+      title: opts.title,
+      message: opts.message,
+      duration: opts.duration ?? (opts.type === 'error' ? 6000 : 4500),
+      action: opts.action, // { label, onClick }
+    }
+    setToasts((prev) => [...prev, toast])
+    if (toast.duration > 0) {
+      setTimeout(() => dismiss(id), toast.duration)
+    }
+    return id
+  }, [dismiss])
+
+  // Helpers ergonomicos
+  const value = useMemo(() => ({
+    show: showToast,
+    success: (msg, title, action) => showToast({ type: 'success', message: msg, title, action }),
+    error: (msg, title, action) => showToast({ type: 'error', message: msg, title, action }),
+    warning: (msg, title, action) => showToast({ type: 'warning', message: msg, title, action }),
+    info: (msg, title, action) => showToast({ type: 'info', message: msg, title, action }),
+    dismiss,
+  }), [showToast, dismiss])
+
+  const typeLabels = {
+    success: 'Exito',
+    error: 'Error',
+    warning: 'Atencion',
+    info: 'Informacion',
+  }
+
+  return (
+    <ToastContext.Provider value={value}>
+      {children}
+      <div className="toast-stack" role="region" aria-label="Notificaciones" aria-live="polite">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast toast-${t.type}`} role="status">
+            <div className="toast-progress" aria-hidden="true">
+              <div className="toast-progress-bar" style={{ animationDuration: `${t.duration}ms` }} />
+            </div>
+            <span className="toast-icon" aria-hidden="true">
+              <Icon
+                name={t.type === 'success' ? 'check'
+                      : t.type === 'error' ? 'x'
+                      : t.type === 'warning' ? 'warning'
+                      : 'bell'}
+                size={20}
+              />
+            </span>
+            <div className="toast-content">
+              <p className="toast-title">
+                {t.title || typeLabels[t.type] || ''}
+              </p>
+              {t.message ? <p className="toast-message">{t.message}</p> : null}
+              {t.action ? (
+                <button
+                  type="button"
+                  className="toast-action"
+                  onClick={() => {
+                    try { t.action.onClick?.() } finally { dismiss(t.id) }
+                  }}
+                >
+                  {t.action.label}
+                </button>
+              ) : null}
+            </div>
+            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="Cerrar notificacion">
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  )
+}
+
+function useToast() {
+  const ctx = useContext(ToastContext)
+  if (!ctx) throw new Error('useToast() debe usarse dentro de <ToastProvider>')
+  return ctx
+}
+
+// ---- Loading skeleton ----
+function Skeleton({ width, height = '1em', circle, lines, className = '', style = {} }) {
+  if (lines) {
+    return (
+      <div className={`skeleton-stack ${className}`}>
+        {Array.from({ length: lines }).map((_, i) => (
+          <div key={i} className="skeleton-line skeleton" />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <span
+      className={`skeleton ${className}`}
+      style={{ width: width || '100%', height, borderRadius: circle ? '50%' : '6px', ...style }}
+      aria-hidden="true"
+    />
+  )
+}
+
+// ---- Empty state ----
+function EmptyState({ icon = 'inbox', title = 'Sin resultados', message, action }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-state-icon" aria-hidden="true">
+        <Icon name={icon} size={28} />
+      </div>
+      <h4 className="empty-state-title">{title}</h4>
+      {message ? <p className="empty-state-message">{message}</p> : null}
+      {action || null}
+    </div>
+  )
+}
+
+// ---- Confirm dialog ----
+// Variantes visuales:
+//   - danger  : icono triangular rojo, boton de accion destructivo.
+//   - warning : icono triangular amarillo.
+//   - info    : icono de informacion azul.
+//   - success : check verde.
+//
+// `danger` se preserva como prop por compatibilidad; ademas controla el
+// color del boton "Confirmar".
+function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = 'Confirmar',
+  cancelLabel = 'Cancelar',
+  danger = false,
+  variant = 'warning',
+  icon,
+  onConfirm,
+  onCancel,
+}) {
+  useEffect(() => {
+    if (!open) return undefined
+    function onKey(e) {
+      if (e.key === 'Escape') onCancel?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onCancel])
+  if (!open) return null
+  // danger tiene prioridad sobre variant para el color del icono + boton.
+  const visualVariant = danger ? 'danger' : variant
+  const iconName =
+    icon ||
+    (danger
+      ? 'warning'
+      : variant === 'success'
+        ? 'check'
+        : variant === 'info'
+          ? 'info'
+          : 'warning')
+  return (
+    <div className="modal-backdrop" onClick={onCancel} role="dialog" aria-modal="true">
+      <div
+        className={`confirm-dialog confirm-dialog-${visualVariant}`}
+        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-message"
+      >
+        <div className="confirm-dialog-header">
+          <div className="confirm-dialog-icon" aria-hidden="true">
+            <Icon name={iconName} size={22} />
+          </div>
+          <div className="confirm-dialog-text">
+            <h3 id="confirm-dialog-title">{title}</h3>
+            {message ? (
+              <p id="confirm-dialog-message">{message}</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="confirm-dialog-actions">
+          <button
+            type="button"
+            className="confirm-dialog-button cancel"
+            onClick={onCancel}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={`confirm-dialog-button confirm ${danger ? 'danger' : visualVariant === 'success' ? 'success' : 'primary'}`}
+            onClick={onConfirm}
+            autoFocus
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Avatar con iniciales ----
+function Avatar({ name, size = 'md' }) {
+  // Iniciales: primera letra del primer nombre + primera letra del ULTIMO
+  // apellido (no de los dos primeros del array, que saldrian ambos apellidos).
+  // Para "MESA ESCOBAR JHAN CARLOS" -> "MC" (Mesa + Carlos).
+  // Para "JHANC MESAE" -> "JM".
+  const initials = useMemo(() => {
+    if (!name) return '?'
+    const words = name.split(/\s+/).filter(Boolean)
+    if (words.length === 0) return '?'
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+    const first = words[0][0]
+    const last = words[words.length - 1][0]
+    return (first + last).toUpperCase()
+  }, [name])
+  return (
+    <span
+      className={`avatar ${size === 'lg' ? 'avatar-lg' : ''}`}
+      title={name}
+      aria-label={`Avatar de ${name}`}
+    >
+      {initials}
+    </span>
+  )
+}
+
+// ---- Session timeout banner ----
+// Muestra un aviso sticky cuando faltan <5 min para que expire el JWT.
+// Sin boton de "extender" (no hay endpoint de refresh); al expirar el JWT
+// la app maneja el 401 redirigiendo al login.
+function SessionBanner({ token }) {
+  const [remainingMs, setRemainingMs] = useState(null)
+
+  useEffect(() => {
+    if (!token) {
+      setRemainingMs(null)
+      return undefined
+    }
+    function decodeExp(tokenStr) {
+      try {
+        const parts = tokenStr.split('.')
+        if (parts.length !== 3) return null
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+        return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+      } catch {
+        return null
+      }
+    }
+    const exp = decodeExp(token)
+    if (!exp) {
+      setRemainingMs(null)
+      return undefined
+    }
+    function tick() {
+      setRemainingMs(Math.max(0, exp - Date.now()))
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [token])
+
+  if (remainingMs == null || remainingMs > 5 * 60 * 1000) return null
+  const totalSec = Math.ceil(remainingMs / 1000)
+  const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
+  const ss = String(totalSec % 60).padStart(2, '0')
+  const urgent = remainingMs < 60 * 1000
+
+  function handleLogout() {
+    apiLogout()
+    window.location.href = '/login'
+  }
+  return (
+    <div className={`session-banner ${urgent ? 'session-urgent' : ''}`} role="alert">
+      <span className="session-banner-icon" aria-hidden="true">
+        <Icon name={urgent ? 'warning' : 'bell'} size={18} />
+      </span>
+      <p className="session-banner-text">
+        Tu sesion expira en <strong>{mm}:{ss}</strong>.
+        {' '}{urgent ? 'Guarda tu trabajo y vuelve a iniciar sesion.' : 'Considera guardar cambios pendientes.'}
+      </p>
+      <button type="button" onClick={handleLogout}>
+        <Icon name="logout" size={14} /> Cerrar sesion
+      </button>
+    </div>
+  )
+}
+
+// ---- Breadcrumbs ----
+// Lista simple de migas de pan. `items` es un array de { label, onClick? }.
+// El ultimo item es "current" (sin link).
+function Breadcrumbs({ items }) {
+  if (!items || items.length === 0) return null
+  return (
+    <nav className="breadcrumbs" aria-label="Migas de pan">
+      {items.map((item, idx) => {
+        const isLast = idx === items.length - 1
+        return (
+          <span key={`${item.label}-${idx}`} className={`breadcrumbs-item ${isLast ? 'current' : ''}`}>
+            {isLast || !item.onClick ? (
+              <span>{item.label}</span>
+            ) : (
+              <a href="#" onClick={(e) => { e.preventDefault(); item.onClick() }}>{item.label}</a>
+            )}
+            {!isLast ? (
+              <span className="breadcrumbs-sep" aria-hidden="true">
+                <Icon name="arrowRight" size={12} />
+              </span>
+            ) : null}
+          </span>
+        )
+      })}
+    </nav>
+  )
+}
+
+// ---- Activity feed (panel admin home) ----
+// Muestra las ultimas N acciones del audit_log. Reusa el endpoint existente.
+function RecentActivity({ limit = 5 }) {
+  const [status, setStatus] = useState('loading')
+  const [entries, setEntries] = useState([])
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setStatus('loading')
+    apiGetAdminAudit({ limit, offset: 0 })
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) { setEntries(res.entries || []); setStatus('ready') }
+        else { setError(res.message || 'No se pudo cargar la actividad.'); setStatus('error') }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setError(err.message || 'Error de red.')
+        setStatus('error')
+      })
+    return () => { cancelled = true }
+  }, [limit])
+
+  if (status === 'loading') {
+    return (
+      <div className="activity-feed-loading">
+        <Skeleton lines={3} />
+      </div>
+    )
+  }
+  if (status === 'error') {
+    return <EmptyState icon="warning" title="No se pudo cargar la actividad" message={error} />
+  }
+  if (!entries.length) {
+    return <EmptyState icon="inbox" title="Sin actividad reciente" message="Las acciones de administradores apareceran aqui." />
+  }
+
+  function iconFor(accion) {
+    if (!accion) return 'bell'
+    if (accion.startsWith('LOGIN_FAIL')) return 'warning'
+    if (accion.startsWith('LOGIN_SUCCESS')) return 'arrowRight'
+    if (accion.startsWith('USER_DEACTIVATE')) return 'trash'
+    if (accion.startsWith('USER_ACTIVATE')) return 'check'
+    if (accion.startsWith('USER_EDIT') || accion.startsWith('USER_UPSERT')) return 'edit'
+    if (accion.startsWith('PASSWORD')) return 'lock'
+    if (accion.startsWith('EXPORT')) return 'download'
+    if (accion.startsWith('RECOVER')) return 'search'
+    return 'bell'
+  }
+  function toneFor(accion) {
+    if (accion?.startsWith('LOGIN_FAIL')) return 'icon-fail'
+    if (accion?.startsWith('LOGIN_SUCCESS')) return 'icon-login'
+    if (accion?.startsWith('USER_DEACTIVATE')) return 'icon-warn'
+    if (accion?.startsWith('EXPORT')) return 'icon-info'
+    return ''
+  }
+  function timeAgo(iso) {
+    if (!iso) return ''
+    const t = new Date(iso).getTime()
+    const ms = Date.now() - t
+    if (ms < 60_000) return 'hace un momento'
+    if (ms < 3600_000) return `hace ${Math.floor(ms / 60_000)} min`
+    if (ms < 86_400_000) return `hace ${Math.floor(ms / 3600_000)} h`
+    return new Date(iso).toLocaleDateString()
+  }
+  function clientLabel(ua) {
+    // Devuelve solo el nombre del cliente. El sufijo "(API)" se omite: el
+    // estilo del chip (`.activity-feed-client.is-api`) ya comunica que es
+    // una peticion programatica (color azul, fondo distinto).
+    const p = parseUserAgent(ua)
+    return p.os ? `${p.browser} · ${p.os}` : p.browser
+  }
+  function clientIconName(ua) {
+    const p = parseUserAgent(ua)
+    if (p.isApi) return 'command'
+    return 'user'
+  }
+  function clientIsApi(ua) {
+    return parseUserAgent(ua).isApi
+  }
+  function describe(entry) {
+    const who = entry.adminEmail || (entry.adminId != null ? `admin #${entry.adminId}` : 'sistema')
+    switch (entry.accion) {
+      case 'LOGIN_SUCCESS': return 'Inicio de sesion'
+      case 'LOGIN_FAIL': return 'Intento de login fallido'
+      case 'LOGIN_FAIL_BAD_PASSWORD':
+      case 'bad_password': return 'Login fallido (contrasena incorrecta)'
+      case 'LOGIN_FAIL_NO_USER':
+      case 'no_user': return 'Login fallido (usuario no existe)'
+      case 'USER_UPSERT': return 'Creo/actualizo usuario'
+      case 'USER_EDIT': return 'Edito usuario'
+      case 'USER_DEACTIVATE': return 'Desactivo usuario'
+      case 'USER_ACTIVATE': return 'Reactivo usuario'
+      case 'PASSWORD_CHANGE': return 'Cambio su contrasena'
+      case 'RECOVER_REQUEST': return 'Solicito recuperacion'
+      case 'EXPORT_METRICS_CSV': return 'Exporto metricas CSV'
+      default: return `Accion: ${entry.accion}`
+    }
+  }
+
+  // Abreviar correos en tabla (antes del @) para mejor encuadre.
+  function shortEmail(email) {
+    if (!email || !email.includes('@')) return email || 'sistema'
+    const [local, domain] = email.split('@')
+    if (local.length <= 18) return email
+    return `${local.slice(0, 14)}…@${domain}`
+  }
+
+  return (
+    <div className="activity-table-wrap">
+      <table className="activity-table">
+        <thead>
+          <tr>
+            <th className="activity-table-th-icon" aria-label="Tipo"></th>
+            <th className="activity-table-th-user">Usuario</th>
+            <th className="activity-table-th-action">Accion</th>
+            <th className="activity-table-th-when">Cuando</th>
+            <th className="activity-table-th-client">Cliente</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => {
+            const tone = toneFor(e.accion)
+            const isApi = clientIsApi(e.userAgent)
+            const who = e.adminEmail || (e.adminId != null ? `admin #${e.adminId}` : 'sistema')
+            return (
+              <tr key={e.id} className={`activity-table-row ${tone ? `tone-${tone}` : ''}`}>
+                <td className="activity-table-td-icon">
+                  <span className={`activity-feed-icon ${tone}`} aria-hidden="true">
+                    <Icon name={iconFor(e.accion)} size={15} />
+                  </span>
+                </td>
+                <td className="activity-table-td-user" title={who}>{shortEmail(who)}</td>
+                <td className="activity-table-td-action">{describe(e)}</td>
+                <td className="activity-table-td-when">{timeAgo(e.createdAt)}</td>
+                <td className="activity-table-td-client">
+                  {e.userAgent ? (
+                    <span className={`activity-feed-client ${isApi ? 'is-api' : ''}`}>
+                      <Icon name={clientIconName(e.userAgent)} size={11} />
+                      <span>{clientLabel(e.userAgent)}</span>
+                    </span>
+                  ) : (
+                    <span className="activity-feed-client muted">—</span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ---- Command palette (Cmd+K / Ctrl+K) ----
+// Modal con busqueda fuzzy sobre un catalogo de acciones.
+// Las acciones reciben { close, navigate } para cerrarse y navegar.
 const ROLE_CONFIG = {
   rector: {
     label: 'Rector',
@@ -127,7 +675,7 @@ const STUDENT_RECORDS = [
     name: 'Salome Campino',
     email: 'salome.campino@saberpro.edu.co',
     code: '',
-    program: 'industrial',
+    program: 'sistemas',
     semester: '',
     age: '21',
     predictedScore: '',
@@ -144,7 +692,7 @@ const STUDENT_RECORDS = [
     name: 'Jhan Carlos Mesa',
     email: 'jhan.mesa@saberpro.edu.co',
     code: '',
-    program: 'industrial',
+    program: 'sistemas',
     semester: '',
     age: '24',
     predictedScore: '',
@@ -163,12 +711,10 @@ const STUDENT_RECORDS = [
 
 const PROGRAM_OPTIONS = [
   { value: 'sistemas', label: 'Ingenieria de Sistemas' },
-  { value: 'industrial', label: 'Ingenieria Industrial' },
 ]
 
 const RECTOR_PROGRAM_OPTIONS = [
-  { value: 'all', label: 'Ambas ingenierias' },
-  ...PROGRAM_OPTIONS,
+  { value: 'sistemas', label: 'Ingenieria de Sistemas' },
 ]
 
 const STUDENT_DASHBOARD_MOCK = {
@@ -330,7 +876,7 @@ const PROFESSOR_GROUP_MOCK = {
     {
       id: 'prof-ind-01',
       name: 'Sebastian Mora',
-      program: 'industrial',
+      program: 'sistemas',
       predictedScore: 233,
       actualScore: 227,
       studyHours: 9,
@@ -363,7 +909,7 @@ const PROFESSOR_GROUP_MOCK = {
     {
       id: 'prof-ind-02',
       name: 'Camila Naranjo',
-      program: 'industrial',
+      program: 'sistemas',
       predictedScore: 247,
       actualScore: 239,
       studyHours: 11,
@@ -396,7 +942,7 @@ const PROFESSOR_GROUP_MOCK = {
     {
       id: 'prof-ind-03',
       name: 'Andres Guarin',
-      program: 'industrial',
+      program: 'sistemas',
       predictedScore: 262,
       actualScore: 254,
       studyHours: 15,
@@ -708,7 +1254,7 @@ function roleHomeTitle(user, selectedProgram = user.program) {
 function roleHomeText(user, selectedProgram = user.program) {
   if (user.role === 'rector' || user.role === 'administrador') {
     return selectedProgram === 'all'
-      ? 'Acceso agregado a las dos ingenierias evaluadas, con comparacion institucional y prioridades rectorales.'
+      ? 'Acceso agregado a la ingenieria evaluada, con seguimiento institucional y prioridades rectorales.'
       : `Vista institucional filtrada a ${getProgramLabel(selectedProgram)}.`
   }
 
@@ -1559,13 +2105,13 @@ function LoginForm({ onLogin }) {
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <label className="auth-label" htmlFor="login-identifier">
-          Usuario *
+          Correo electronico *
         </label>
         <input
           id="login-identifier"
           className="auth-input"
           type="text"
-          placeholder="Correo o numero de documento"
+          placeholder="tu.correo@dominio.com"
           value={formData.identifier}
           onChange={(event) =>
             setFormData((current) => ({ ...current, identifier: event.target.value }))
@@ -1665,9 +2211,9 @@ function LoginForm({ onLogin }) {
 
       <div className="auth-links single-link login-links">
         <p className="auth-hint">
-          El sistema solo permite el ingreso con correo institucional
-          <strong> @unac.edu.co</strong>. Si eres estudiante y aun no tienes
-          credenciales, contacta a tu programa para que te sean asignadas.
+          Ingresa con tu <strong>correo electronico</strong> y tu{' '}
+          <strong>numero de documento</strong> como contrasena. Si aun no
+          tienes acceso, contacta al administrador de tu programa.
         </p>
       </div>
     </AuthLayout>
@@ -1734,6 +2280,7 @@ function AccountSettingsModal({ user, onClose }) {
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' })
   const [pwFeedback, setPwFeedback] = useState(null)
   const [savingPw, setSavingPw] = useState(false)
+  const toast = useToast()
 
   async function handleChangePassword(event) {
     event.preventDefault()
@@ -1773,9 +2320,11 @@ function AccountSettingsModal({ user, onClose }) {
       })
       if (!res.ok) {
         setPwFeedback({ ok: false, message: res.message || 'No se pudo cambiar.' })
+        toast.error(res.message || 'No se pudo cambiar la contrasena.')
         return
       }
       setPwFeedback({ ok: true, message: 'Contrasena actualizada.' })
+      toast.success('Contrasena actualizada.')
       setPwForm({ currentPassword: '', newPassword: '', confirm: '' })
     } finally {
       setSavingPw(false)
@@ -1915,15 +2464,8 @@ function DashboardShell({
           <div className="topbar-sub">{roleSettings.topbarSubtitle}</div>
         </div>
         <div className="topbar-actions">
-          {user.role !== 'estudiante' ? (
-            <div className="search-box">
-              <span className="topbar-icon">
-                <Icon name="search" size={16} />
-              </span>
-              <input type="text" placeholder={searchPlaceholder} />
-            </div>
-          ) : null}
           {topbarControls}
+          <Avatar name={user.username || user.email || user.documento} />
           <button
             className="logout-button account-button"
             type="button"
@@ -2075,9 +2617,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
               value={program}
               onChange={(e) => setProgram(e.target.value)}
             >
-              <option value="all">Ambas ingenierias</option>
               <option value="sistemas">Ingenieria de Sistemas</option>
-              <option value="industrial">Ingenieria Industrial</option>
             </select>
           </div>
         ) : null}
@@ -2200,21 +2740,8 @@ function CohortPanel({ user, allowProgramFilter = false }) {
 
 function RectorView({ user, onLogout, onUserUpdated }) {
   const [activeNavIndex, setActiveNavIndex] = useState(0)
-  const [selectedProgram, setSelectedProgram] = useState('all')
-
-  const topbarControls = (
-    <select
-      className="topbar-select"
-      value={selectedProgram}
-      onChange={(event) => setSelectedProgram(event.target.value)}
-    >
-      {RECTOR_PROGRAM_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  )
+  // Solo hay un programa academico (sistemas) — el selector se removio del topbar.
+  const [selectedProgram] = useState('sistemas')
 
   return (
     <DashboardShell
@@ -2222,7 +2749,7 @@ function RectorView({ user, onLogout, onUserUpdated }) {
       onLogout={onLogout}
       onUserUpdated={onUserUpdated}
       searchPlaceholder="Buscar programa o estudiante..."
-      topbarControls={topbarControls}
+      topbarControls={null}
       activeNavIndex={activeNavIndex}
       onNavSelect={setActiveNavIndex}
     >
@@ -2313,7 +2840,7 @@ function RectorPanelSection({ user, selectedProgram }) {
   const [visibleSummaries, setVisibleSummaries] = useState([])
   useEffect(() => {
     if (status !== 'ready') return
-    const programs = selectedProgram === 'all' ? ['sistemas', 'industrial'] : [selectedProgram]
+    const programs = [selectedProgram || 'sistemas']
     const summaries = programs.map((program) => {
       const inProg = students.filter((s) => s.program === program)
       const b = bucketize(inProg)
@@ -2344,7 +2871,7 @@ function RectorPanelSection({ user, selectedProgram }) {
         </div>
         <div className="welcome-chip">
           <span>
-            {selectedProgram === 'all' ? '2 ingenierias evaluadas' : getProgramLabel(selectedProgram)}
+            {getProgramLabel(selectedProgram || 'sistemas')}
           </span>
           <span>· {metrics?.totalEstudiantes ?? students.length} estudiantes</span>
         </div>
@@ -2592,27 +3119,21 @@ function RectorMetasSection({ selectedProgram }) {
 // =========================
 function RectorComparativoSection({ selectedProgram }) {
   const sistemas = useRectorCohort('sistemas')
-  const industrial = useRectorCohort('industrial')
-  const isReady = sistemas.status === 'ready' && industrial.status === 'ready'
+  const isReady = sistemas.status === 'ready'
 
   const programas = [
     { value: 'sistemas', label: 'Ingenieria de Sistemas', state: sistemas },
-    { value: 'industrial', label: 'Ingenieria Industrial', state: industrial },
   ]
-  const visible =
-    selectedProgram === 'all' ? programas : programas.filter((p) => p.value === selectedProgram)
+  const visible = programas
 
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
       <section className="welcome-banner card">
         <div>
           <p className="banner-kicker">Comparativo</p>
-          <h1>Sistemas vs Industrial</h1>
+          <h1>Cohorte de Sistemas</h1>
           <p className="banner-text">
-            Comparacion de las dos ingenierias evaluadas con la cohorte real.
-            {selectedProgram !== 'all'
-              ? ` Mostrando solo ${getProgramLabel(selectedProgram)}.`
-              : ''}
+            Indicadores de la ingenieria evaluada con la cohorte real.
           </p>
         </div>
       </section>
@@ -2902,31 +3423,18 @@ function RectorReportesSection({ selectedProgram }) {
 }
 
 function DeanView({ user, onLogout, onUserUpdated }) {
-  const [selectedProgram, setSelectedProgram] = useState(user.program || 'sistemas')
+  const [selectedProgram] = useState(user.program || 'sistemas')
   // El decano inicia directamente en "Programas" (idx 0) para que pueda
-  // escoger el programa y ver el listado de estudiantes con filtros.
+  // ver el listado de estudiantes. El selector de programa del topbar se removio
+  // porque solo hay un programa academico (sistemas).
   const [activeNavIndex, setActiveNavIndex] = useState(0)
-
-  const topbarControls = (
-    <select
-      className="topbar-select"
-      value={selectedProgram}
-      onChange={(event) => setSelectedProgram(event.target.value)}
-    >
-      {PROGRAM_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  )
 
   return (
     <DashboardShell
       user={user}
       onLogout={onLogout}
       onUserUpdated={onUserUpdated}
-      topbarControls={topbarControls}
+      topbarControls={null}
       activeNavIndex={activeNavIndex}
       onNavSelect={setActiveNavIndex}
     >
@@ -2964,7 +3472,6 @@ function DeanDashboardSection({ user, selectedProgram }) {
         </div>
         <div className="welcome-chip">
           <span>{getProgramLabel(selectedProgram)}</span>
-          <span>· {selectedProgram === 'sistemas' ? 'Ingenieria de Sistemas' : 'Ingenieria Industrial'}</span>
         </div>
       </section>
       <DeanSummaryCards selectedProgram={selectedProgram} />
@@ -3086,29 +3593,17 @@ function DeanProgramasSection({ selectedProgram }) {
 }
 
 function DeanBenchmarkingSection({ user, selectedProgram }) {
-  // El otro programa contra el que se compara.
-  const other = selectedProgram === 'sistemas' ? 'industrial' : 'sistemas'
-  const ownState = useRectorCohort(selectedProgram)
-  const otherState = useRectorCohort(other)
-  const isReady = ownState.status === 'ready' && otherState.status === 'ready'
-
-  const fixed = user.program && user.program !== 'all' ? user.program : null
-  const baseProgram = fixed || selectedProgram
-  const baseState = fixed
-    ? fixed === selectedProgram
-      ? ownState
-      : otherState
-    : ownState
+  const state = useRectorCohort(selectedProgram)
+  const isReady = state.status === 'ready'
 
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
       <section className="welcome-banner card">
         <div>
           <p className="banner-kicker">Benchmarking</p>
-          <h1>{getProgramLabel(baseProgram)} vs {getProgramLabel(other)}</h1>
+          <h1>Indicadores de {getProgramLabel(selectedProgram)}</h1>
           <p className="banner-text">
-            Comparacion de los indicadores clave del programa bajo tu responsabilidad
-            contra la otra ingenieria de la facultad.
+            Resumen de los indicadores clave del programa bajo tu responsabilidad.
           </p>
         </div>
       </section>
@@ -3117,45 +3612,33 @@ function DeanBenchmarkingSection({ user, selectedProgram }) {
         <>
           <article className="card">
             <div className="section-header compact">
-              <h2>Comparativa de indicadores</h2>
+              <h2>Indicadores del programa</h2>
             </div>
             <table>
               <thead>
                 <tr>
                   <th>Indicador</th>
-                  <th>{getProgramLabel(baseProgram)}</th>
-                  <th>{getProgramLabel(other)}</th>
+                  <th>Valor</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>Estudiantes</td>
-                  <td className="table-code">{baseState.students.length}</td>
-                  <td className="table-code">
-                    {fixed ? otherState.students.length : otherState.students.length}
-                  </td>
+                  <td className="table-code">{state.students.length}</td>
                 </tr>
                 <tr>
                   <td>Con perfil completo</td>
-                  <td className="table-code">{bucketize(baseState.students).conPerfil}</td>
-                  <td className="table-code">{bucketize(otherState.students).conPerfil}</td>
+                  <td className="table-code">{bucketize(state.students).conPerfil}</td>
                 </tr>
                 <tr>
                   <td>Con prediccion</td>
-                  <td className="table-code">{bucketize(baseState.students).conPrediccion}</td>
-                  <td className="table-code">{bucketize(otherState.students).conPrediccion}</td>
+                  <td className="table-code">{bucketize(state.students).conPrediccion}</td>
                 </tr>
                 <tr>
                   <td>Promedio estimado</td>
                   <td className="table-score">
                     {(() => {
-                      const v = bucketize(baseState.students).promedioPuntaje
-                      return v !== null ? Math.round(v) : '—'
-                    })()}
-                  </td>
-                  <td className="table-score">
-                    {(() => {
-                      const v = bucketize(otherState.students).promedioPuntaje
+                      const v = bucketize(state.students).promedioPuntaje
                       return v !== null ? Math.round(v) : '—'
                     })()}
                   </td>
@@ -3164,80 +3647,23 @@ function DeanBenchmarkingSection({ user, selectedProgram }) {
                   <td>Asistencia promedio</td>
                   <td className="table-code">
                     {(() => {
-                      const v = bucketize(baseState.students).promedioAsistencia
-                      return v !== null ? `${Math.round(v)}%` : '—'
-                    })()}
-                  </td>
-                  <td className="table-code">
-                    {(() => {
-                      const v = bucketize(otherState.students).promedioAsistencia
+                      const v = bucketize(state.students).promedioAsistencia
                       return v !== null ? `${Math.round(v)}%` : '—'
                     })()}
                   </td>
                 </tr>
                 <tr>
                   <td>Riesgo alto</td>
-                  <td className="table-code">{bucketize(baseState.students).riesgoAlto}</td>
-                  <td className="table-code">{bucketize(otherState.students).riesgoAlto}</td>
+                  <td className="table-code">{bucketize(state.students).riesgoAlto}</td>
                 </tr>
               </tbody>
             </table>
           </article>
-
-          <article className="card">
-            <div className="section-header compact">
-              <h2>Lectura del benchmarking</h2>
-            </div>
-            <DeanBenchmarkingReading
-              baseLabel={getProgramLabel(baseProgram)}
-              otherLabel={getProgramLabel(other)}
-              base={bucketize(baseState.students)}
-              other={bucketize(otherState.students)}
-            />
-          </article>
         </>
       ) : (
-        <p className="student-interpretation">Cargando comparativa...</p>
+        <p className="student-interpretation">Cargando indicadores...</p>
       )}
     </section>
-  )
-}
-
-function DeanBenchmarkingReading({ baseLabel, otherLabel, base, other }) {
-  const brecha = base.riesgoAlto - other.riesgoAlto
-  const coberturaBase = base.conPerfil
-  const coberturaOther = other.conPerfil
-  return (
-    <div className="report-cards">
-      <article className="report-card">
-        <h3>Riesgo alto vs la otra ingenieria</h3>
-        <p>
-          {baseLabel} tiene {base.riesgoAlto} estudiantes en riesgo alto;
-          {' '}{otherLabel} tiene {other.riesgoAlto}.
-          {brecha > 0
-            ? ` La brecha es de +${brecha} a favor de la otra carrera, lo que sugiere priorizar intervencion.`
-            : brecha < 0
-            ? ` La diferencia es favorable en ${-brecha} estudiantes respecto a la otra carrera.`
-            : ' Estan empatados en este indicador.'}
-        </p>
-      </article>
-      <article className="report-card">
-        <h3>Cobertura de perfil</h3>
-        <p>
-          {coberturaBase} estudiantes del programa bajo tu responsabilidad ya
-          completaron el perfil, contra {coberturaOther} del otro. La
-          diferencia es {coberturaBase - coberturaOther >= 0 ? 'positiva' : 'negativa'} en {Math.abs(coberturaBase - coberturaOther)}.
-        </p>
-      </article>
-      <article className="report-card">
-        <h3>Accion recomendada</h3>
-        <p>
-          {brecha > 0 || coberturaBase < coberturaOther
-            ? 'Priorizar el cierre de perfiles pendientes y reforzar el acompanimiento a los estudiantes en riesgo alto.'
-            : 'Mantener el ritmo actual y aprovechar la buena cobertura para enfocarse en la calidad del modelo predictivo.'}
-        </p>
-      </article>
-    </div>
   )
 }
 
@@ -3513,26 +3939,12 @@ function ProfessorView({ user, onLogout, onUserUpdated }) {
   const isAlertsSection = activeSectionIndex === 2
   const isReportsSection = activeSectionIndex === 3
 
-  const topbarControls = (
-    <select
-      className="topbar-select"
-      value={selectedProgram}
-      onChange={(event) => setSelectedProgram(event.target.value)}
-    >
-      {PROGRAM_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  )
-
   return (
     <DashboardShell
       user={user}
       onLogout={onLogout}
       onUserUpdated={onUserUpdated}
-      topbarControls={topbarControls}
+      topbarControls={null}
       activeNavIndex={activeSectionIndex}
       onNavSelect={setActiveSectionIndex}
     >
@@ -3966,9 +4378,6 @@ function StudentView({ user, onLogout, onUserUpdated }) {
     prediction: null,
     predictions: [],
   })
-  const [editing, setEditing] = useState(false)
-  const [saveError, setSaveError] = useState(null)
-  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -3998,27 +4407,6 @@ function StudentView({ user, onLogout, onUserUpdated }) {
       prediction,
       predictions: [prediction, ...(state.predictions || [])],
     })
-  }
-
-  async function handleSaveUpdate(payload) {
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const result = await apiSaveStudentProfile(payload)
-      if (!result.ok) {
-        setSaveError(result.message || 'No se pudo guardar.')
-        return
-      }
-      setState((s) => ({
-        ...s,
-        profile: result.profile,
-        prediction: result.prediction,
-        predictions: [result.prediction, ...(s.predictions || [])],
-      }))
-      setEditing(false)
-    } finally {
-      setSaving(false)
-    }
   }
 
   if (state.status === 'loading') {
@@ -4069,41 +4457,6 @@ function StudentView({ user, onLogout, onUserUpdated }) {
       score: p.puntajeEstimado,
     }))
 
-  if (editing) {
-    return (
-      <DashboardShell
-        user={user}
-        onLogout={onLogout}
-        onUserUpdated={onUserUpdated}
-        searchPlaceholder=""
-        customNav={studentSections}
-        activeNavIndex={activeSectionIndex}
-        onNavSelect={setActiveSectionIndex}
-      >
-        <section className="onboarding-wrap card">
-          <div className="onboarding-header">
-            <p className="banner-kicker">Actualizar mis datos</p>
-            <h1>Edita tu perfil y vuelve a calcular tu prediccion</h1>
-            <p className="banner-text">
-              Cualquier cambio guardado generara una nueva prediccion y quedara
-              registrado en tu historial.
-            </p>
-          </div>
-          <StudentProfileForm
-            initialValues={profileToForm(profile)}
-            onSubmit={handleSaveUpdate}
-            onCancel={() => {
-              setEditing(false)
-              setSaveError(null)
-            }}
-            busy={saving}
-            error={saveError}
-          />
-        </section>
-      </DashboardShell>
-    )
-  }
-
   return (
     <DashboardShell
       user={user}
@@ -4118,17 +4471,11 @@ function StudentView({ user, onLogout, onUserUpdated }) {
           <p className="banner-kicker">Seccion activa</p>
           <h2>{activeSectionLabel}</h2>
           <p className="student-interpretation">
-            Mostrando tu informacion personalizada calculada por el modelo predictivo
-            con los datos que registraste.
+            Tus datos provienen del roster institucional del programa y son la
+            fuente de verdad para tu prediccion. Si necesitas corregirlos,
+            contacta al administrador de tu programa.
           </p>
         </div>
-        <button
-          type="button"
-          className="auth-button auth-button-secondary"
-          onClick={() => setEditing(true)}
-        >
-          Actualizar mis datos
-        </button>
       </section>
 
       {isSummarySection ? (
@@ -4217,7 +4564,8 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                 ))}
                 {!prediction ? (
                   <p className="student-interpretation">
-                    Aun no tenemos prediccion. Pulsa "Actualizar mis datos".
+                    Aun no tenemos prediccion. Contacta al administrador de tu
+                    programa para verificar que estes en el roster institucional.
                   </p>
                 ) : null}
               </div>
@@ -4321,14 +4669,12 @@ function StudentView({ user, onLogout, onUserUpdated }) {
 const ADMIN_ROLE_OPTIONS = [
   { value: 'rector', label: 'Rector' },
   { value: 'decano', label: 'Decano' },
-  { value: 'profesor', label: 'Profesor' },
   { value: 'administrador', label: 'Administrador' },
   { value: 'estudiante', label: 'Estudiante' },
 ]
 
 const ADMIN_PROGRAM_OPTIONS = [
   { value: 'sistemas', label: 'Sistemas' },
-  { value: 'industrial', label: 'Industrial' },
   { value: 'all', label: 'Todas (all)' },
 ]
 
@@ -4363,14 +4709,195 @@ function formatDate(value) {
   }
 }
 
+// Captura errores de render en la UI para que un bug del JSX no deje la
+// pantalla en blanco (muestra el error + la traza en pantalla).
+class AdminComparativoErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[AdminComparativoSection]', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      const err = this.state.error
+      return (
+        <section className="card" style={{ padding: '1.25rem' }}>
+          <h2 style={{ margin: 0, color: 'var(--danger)' }}>Error al cargar Comparativo</h2>
+          <p style={{ marginTop: '0.5rem', color: 'var(--text-soft)' }}>
+            {String(err?.message || err)}
+          </p>
+          <pre style={{
+            marginTop: '0.75rem',
+            padding: '0.75rem',
+            background: 'var(--surface-3)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            fontSize: '0.8rem',
+            whiteSpace: 'pre-wrap',
+            overflow: 'auto',
+            maxHeight: '300px',
+          }}>
+            {String(err?.stack || '')}
+          </pre>
+          <button
+            type="button"
+            className="auth-button-sm"
+            style={{ marginTop: '0.75rem' }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Reintentar
+          </button>
+        </section>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// ErrorBoundary reutilizable para cualquier panel admin.
+// Captura errores de render y los muestra en pantalla en lugar de dejar
+// la pagina en blanco. Acepta `section` como prop para personalizar el titulo.
+class AdminErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    console.error(`[${this.props.section || 'AdminPanel'}]`, error, info)
+  }
+  render() {
+    if (this.state.error) {
+      const err = this.state.error
+      return (
+        <section className="card" style={{ padding: '1.25rem' }}>
+          <h2 style={{ margin: 0, color: 'var(--danger)' }}>
+            Error al cargar {this.props.section || 'el panel'}
+          </h2>
+          <p style={{ marginTop: '0.5rem', color: 'var(--text-soft)' }}>
+            {String(err?.message || err)}
+          </p>
+          <pre style={{
+            marginTop: '0.75rem',
+            padding: '0.75rem',
+            background: 'var(--surface-3)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            fontSize: '0.8rem',
+            whiteSpace: 'pre-wrap',
+            overflow: 'auto',
+            maxHeight: '300px',
+          }}>
+            {String(err?.stack || '')}
+          </pre>
+          <button
+            type="button"
+            className="auth-button-sm"
+            style={{ marginTop: '0.75rem' }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Reintentar
+          </button>
+        </section>
+      )
+    }
+    return this.props.children
+  }
+}
+
+// Genera un analisis ejecutivo en lenguaje natural a partir de las metricas
+// agregadas. Produce 2-3 frases segun los datos disponibles.
+function generateExecutiveAnalysis(metrics) {
+  if (!metrics || metrics.totalEstudiantes === 0) {
+    return 'Aun no hay estudiantes registrados en la cohorte.'
+  }
+  const total = metrics.totalEstudiantes
+  const conPerfil = metrics.conPerfil
+  const conPrediccion = metrics.conPrediccion
+  const sinPerfil = metrics.sinPerfil
+  const dist = metrics.distribucion || {}
+  const alto = dist.alto || 0
+  const medio = dist.medio || 0
+  const bajo = dist.bajo || 0
+  const pct = (metrics.porcentajes || {})
+  const sentences = []
+
+  // Cohorte general
+  sentences.push(
+    `La cohorte de Sistemas cuenta con ${total} estudiante${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'}.`,
+  )
+
+  // Cobertura del perfil
+  if (conPerfil === total) {
+    sentences.push(
+      'La cobertura del perfil institucional es del 100%, lo que permite hacer seguimiento personalizado a cada estudiante.',
+    )
+  } else if (sinPerfil > 0) {
+    sentences.push(
+      `${conPerfil} estudiantes (${pct.coberturaPerfil ?? 0}%) completaron el perfil institucional; quedan ${sinPerfil} pendientes de onboarding.`,
+    )
+  }
+
+  // Cobertura de prediccion
+  if (conPrediccion === 0 && metrics.conPerfil > 0) {
+    sentences.push(
+      'Ningun estudiante tiene prediccion del modelo todavia; puedes generarlas desde el panel de Analisis con "Recomputar predicciones".',
+    )
+  } else if (conPrediccion > 0 && conPrediccion < conPerfil) {
+    const faltan = conPerfil - conPrediccion
+    sentences.push(
+      `${conPrediccion} estudiantes (${pct.coberturaPrediccion ?? 0}% del total, ${Math.round((conPrediccion / Math.max(conPerfil, 1)) * 100)}% de los que tienen perfil) cuentan con prediccion del modelo; faltan ${faltan} por procesar.`,
+    )
+  } else if (conPrediccion === conPerfil && conPerfil > 0) {
+    sentences.push(
+      'Todos los estudiantes con perfil cuentan con una prediccion del modelo actualizada.',
+    )
+  }
+
+  // Distribucion de riesgo
+  if (alto + medio + bajo > 0) {
+    const predCount = alto + medio + bajo
+    sentences.push(
+      `Sobre ${predCount} estudiantes evaluados, ${alto} estan en riesgo alto (${pct.riesgoAltoPct ?? 0}% del total), ${medio} en riesgo medio (${pct.riesgoMedioPct ?? 0}%) y ${bajo} en riesgo bajo (${pct.riesgoBajoPct ?? 0}%).`,
+    )
+    if (alto > 0) {
+      sentences.push(
+        `Prioriza intervencion con los ${alto} estudiante${alto === 1 ? '' : 's'} en riesgo alto para reducir el riesgo de desercion antes del examen Saber Pro.`,
+      )
+    } else {
+      sentences.push(
+        `No se identificaron estudiantes en riesgo alto: la cohorte esta en una posicion saludable de cara a Saber Pro.`,
+      )
+    }
+  }
+
+  // Promedio de puntaje
+  if (metrics.promedioPuntaje !== null && metrics.promedioPuntaje !== undefined) {
+    const nivel =
+      metrics.promedioPuntaje >= 250 ? 'competitivo' :
+      metrics.promedioPuntaje >= 200 ? 'moderado' : 'bajo'
+    sentences.push(
+      `El promedio estimado de puntaje Saber Pro es de ${metrics.promedioPuntaje} puntos, lo que sugiere un desempeno ${nivel} frente a la media nacional.`,
+    )
+  }
+
+  return sentences.join(' ')
+}
+
 function AdminComparativoSection() {
   const [sis, setSis] = useState({ status: 'loading', metrics: null, students: [], error: null })
-  const [ind, setInd] = useState({ status: 'loading', metrics: null, students: [], error: null })
 
   useEffect(() => {
     let alive = true
-    Promise.all([apiGetCohort('sistemas'), apiGetCohort('industrial')])
-      .then(([sisRes, indRes]) => {
+    apiGetCohort('sistemas')
+      .then((sisRes) => {
         if (!alive) return
         setSis({
           status: sisRes.ok ? 'ready' : 'error',
@@ -4378,142 +4905,390 @@ function AdminComparativoSection() {
           students: sisRes.students || [],
           error: sisRes.ok ? null : sisRes.message || 'Error',
         })
-        setInd({
-          status: indRes.ok ? 'ready' : 'error',
-          metrics: indRes.metrics || null,
-          students: indRes.students || [],
-          error: indRes.ok ? null : indRes.message || 'Error',
-        })
       })
       .catch((err) => {
         if (!alive) return
         setSis({ status: 'error', metrics: null, students: [], error: err.message || 'Error de red' })
-        setInd({ status: 'error', metrics: null, students: [], error: err.message || 'Error de red' })
       })
     return () => {
       alive = false
     }
   }, [])
 
-  function metricRow(label, sisVal, indVal) {
-    return (
-      <tr key={label}>
-        <td>{label}</td>
-        <td className="table-code">{sisVal ?? '—'}</td>
-        <td className="table-code">{indVal ?? '—'}</td>
-      </tr>
-    )
-  }
-
-  function buildRows(metrics) {
-    if (!metrics) return []
-    return [
-      { label: 'Estudiantes con perfil', value: metrics.conPerfil },
-      { label: 'Estudiantes con prediccion', value: metrics.conPrediccion },
-      { label: 'Sin perfil', value: metrics.sinPerfil },
-      { label: 'Riesgo alto', value: metrics.riesgoAlto },
-      { label: 'Riesgo medio', value: metrics.riesgoMedio },
-      { label: 'Riesgo bajo', value: metrics.riesgoBajo },
-      {
-        label: 'Promedio estimado (puntaje)',
-        value:
-          metrics.promedioPuntaje !== null && metrics.promedioPuntaje !== undefined
-            ? Math.round(metrics.promedioPuntaje)
-            : '—',
-      },
-    ]
-  }
-
-  const sisRows = buildRows(sis.metrics)
-  const indRows = buildRows(ind.metrics)
+  const metrics = sis.metrics
+  const dist = metrics?.distribucion || { alto: 0, medio: 0, bajo: 0 }
+  const total = metrics?.totalEstudiantes || 0
+  const topRisk = (sis.students || [])
+    .filter((s) => s.clase)
+    .slice()
+    .sort((a, b) => (a.puntajeEstimado ?? 9999) - (b.puntajeEstimado ?? 9999))
+    .slice(0, 5)
 
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
       <div className="cohort-toolbar">
         <div>
           <p className="banner-kicker">Comparativo institucional</p>
-          <h2>Sistemas vs Industrial</h2>
+          <h2>Cohorte de Sistemas</h2>
+          <p style={{ margin: '0.5rem 0 0', color: 'var(--text-soft)', fontSize: '0.92rem', maxWidth: 620 }}>
+            Indicadores agregados del programa academico, calculados en vivo desde la base de datos
+            institucional y las predicciones generadas por el modelo <code>real-data-v1</code>.
+          </p>
         </div>
       </div>
-      <article className="card">
-        <div className="section-header compact">
-          <h2>Metricas comparadas</h2>
-        </div>
-        {sis.status === 'loading' || ind.status === 'loading' ? (
-          <p className="student-interpretation">Cargando cohortes...</p>
-        ) : null}
-        {sis.status === 'error' ? (
-          <p className="auth-feedback error">Sistemas: {sis.error}</p>
-        ) : null}
-        {ind.status === 'error' ? (
-          <p className="auth-feedback error">Industrial: {ind.error}</p>
-        ) : null}
-        {sis.status === 'ready' && ind.status === 'ready' ? (
-          (sis.metrics?.conPerfil === 0 && ind.metrics?.conPerfil === 0) ? (
-            <div className="data-table-empty">
-              <p>Aun no hay estudiantes con perfil completado en ninguno de los dos programas.</p>
-              <p className="student-interpretation" style={{ marginTop: '0.5rem' }}>
-                Cuando los estudiantes diligencien su formulario de onboarding, podras ver aqui
-                el comparativo de metricas entre Sistemas e Industrial.
+
+      {sis.status === 'loading' ? (
+        <p className="student-interpretation">Cargando cohorte...</p>
+      ) : null}
+      {sis.status === 'error' ? (
+        <p className="auth-feedback error">No se pudo cargar la cohorte: {sis.error}</p>
+      ) : null}
+
+      {sis.status === 'ready' && metrics ? (
+        <>
+          {/* ---- 1) Cards KPI principales ---- */}
+          <section className="grid-4 comparativo-kpis">
+            <article className="kpi-card indigo">
+              <div className="kpi-icon"><Icon name="users" size={22} /></div>
+              <p className="kpi-value">{total}</p>
+              <p className="kpi-label">Total estudiantes</p>
+              <p className="kpi-detail">Registrados en la cohorte</p>
+            </article>
+            <article className="kpi-card cyan">
+              <div className="kpi-icon"><Icon name="check" size={22} /></div>
+              <p className="kpi-value">{metrics.conPerfil}</p>
+              <p className="kpi-label">Con perfil completo</p>
+              <p className="kpi-detail">
+                {(metrics.porcentajes?.coberturaPerfil ?? 0).toFixed(1)}% del total
               </p>
+            </article>
+            <article className="kpi-card violet">
+              <div className="kpi-icon"><Icon name="target" size={22} /></div>
+              <p className="kpi-value">{metrics.conPrediccion}</p>
+              <p className="kpi-label">Con prediccion del modelo</p>
+              <p className="kpi-detail">
+                {(metrics.porcentajes?.coberturaPrediccion ?? 0).toFixed(1)}% del total
+              </p>
+            </article>
+            <article className="kpi-card rose">
+              <div className="kpi-icon"><Icon name="warning" size={22} /></div>
+              <p className="kpi-value">{dist.alto}</p>
+              <p className="kpi-label">En riesgo alto</p>
+              <p className="kpi-detail">
+                {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}% del total
+              </p>
+            </article>
+          </section>
+
+          {/* ---- 2) Distribucion de riesgo ---- */}
+          <article className="card">
+            <div className="section-header">
+              <h2>Distribucion de riesgo</h2>
+              <span className="live-chip">{dist.alto + dist.medio + dist.bajo} evaluados</span>
             </div>
-          ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Indicador</th>
-                <th>Sistemas</th>
-                <th>Industrial</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metricRow('Estudiantes con perfil', sis.metrics?.conPerfil, ind.metrics?.conPerfil)}
-              {metricRow('Estudiantes con prediccion', sis.metrics?.conPrediccion, ind.metrics?.conPrediccion)}
-              {metricRow('Sin perfil', sis.metrics?.sinPerfil, ind.metrics?.sinPerfil)}
-              {metricRow('Riesgo alto', sis.metrics?.riesgoAlto, ind.metrics?.riesgoAlto)}
-              {metricRow('Riesgo medio', sis.metrics?.riesgoMedio, ind.metrics?.riesgoMedio)}
-              {metricRow('Riesgo bajo', sis.metrics?.riesgoBajo, ind.metrics?.riesgoBajo)}
-              {metricRow(
-                'Promedio estimado (puntaje)',
-                sis.metrics?.promedioPuntaje !== null && sis.metrics?.promedioPuntaje !== undefined
-                  ? Math.round(sis.metrics.promedioPuntaje)
-                  : '—',
-                ind.metrics?.promedioPuntaje !== null && ind.metrics?.promedioPuntaje !== undefined
-                  ? Math.round(ind.metrics.promedioPuntaje)
-                  : '—',
-              )}
-            </tbody>
-          </table>
-          )
-        ) : null}
-      </article>
+
+            {dist.alto + dist.medio + dist.bajo === 0 ? (
+              <div className="data-table-empty">
+                <p>Aun no hay predicciones para esta cohorte.</p>
+                <p className="student-interpretation" style={{ marginTop: '0.5rem' }}>
+                  Las predicciones se generan automaticamente al completar el perfil institucional,
+                  o puedes dispararlas manualmente desde el panel de Analisis del modelo.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="risk-distribution-bar" aria-label="Distribucion de riesgo">
+                  <div
+                    className="risk-segment bajo"
+                    style={{ width: `${((dist.bajo || 0) / Math.max(total, 1)) * 100}%` }}
+                  >
+                    {(dist.bajo || 0) > 0 ? (
+                      <span className="risk-segment-label">
+                        {((dist.bajo || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    className="risk-segment medio"
+                    style={{ width: `${((dist.medio || 0) / Math.max(total, 1)) * 100}%` }}
+                  >
+                    {(dist.medio || 0) > 0 ? (
+                      <span className="risk-segment-label">
+                        {((dist.medio || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    className="risk-segment alto"
+                    style={{ width: `${((dist.alto || 0) / Math.max(total, 1)) * 100}%` }}
+                  >
+                    {(dist.alto || 0) > 0 ? (
+                      <span className="risk-segment-label">
+                        {((dist.alto || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <ul className="risk-distribution-legend">
+                  <li>
+                    <span className="risk-dot bajo" aria-hidden="true" />
+                    <span className="risk-legend-label">Riesgo bajo</span>
+                    <span className="risk-legend-value">
+                      <strong>{dist.bajo || 0}</strong>
+                      <span className="risk-legend-pct">
+                        {(metrics.porcentajes?.riesgoBajoPct ?? 0).toFixed(1)}%
+                      </span>
+                    </span>
+                  </li>
+                  <li>
+                    <span className="risk-dot medio" aria-hidden="true" />
+                    <span className="risk-legend-label">Riesgo medio</span>
+                    <span className="risk-legend-value">
+                      <strong>{dist.medio || 0}</strong>
+                      <span className="risk-legend-pct">
+                        {(metrics.porcentajes?.riesgoMedioPct ?? 0).toFixed(1)}%
+                      </span>
+                    </span>
+                  </li>
+                  <li>
+                    <span className="risk-dot alto" aria-hidden="true" />
+                    <span className="risk-legend-label">Riesgo alto</span>
+                    <span className="risk-legend-value">
+                      <strong>{dist.alto || 0}</strong>
+                      <span className="risk-legend-pct">
+                        {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}%
+                      </span>
+                    </span>
+                  </li>
+                </ul>
+              </>
+            )}
+          </article>
+
+          {/* ---- 3) Analisis ejecutivo ---- */}
+          <article className="card comparativo-analysis-card">
+            <div className="section-header compact">
+              <h2>
+                <Icon name="chart" size={18} />
+                <span style={{ marginLeft: '0.5rem' }}>Analisis ejecutivo</span>
+              </h2>
+            </div>
+            <p className="comparativo-analysis-text">
+              {generateExecutiveAnalysis(metrics)}
+            </p>
+          </article>
+
+          {/* ---- 4) Tabla de metricas detalladas ---- */}
+          <article className="card">
+            <div className="section-header compact">
+              <h2>Metricas detalladas</h2>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Indicador</th>
+                  <th style={{ width: '15%' }} className="num">Valor</th>
+                  <th style={{ width: '15%' }} className="num">Porcentaje</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Total de estudiantes</td>
+                  <td className="table-code">{total}</td>
+                  <td className="table-code">100.0%</td>
+                </tr>
+                <tr>
+                  <td>Con perfil institucional</td>
+                  <td className="table-code">{metrics.conPerfil}</td>
+                  <td className="table-code">
+                    {(metrics.porcentajes?.coberturaPerfil ?? 0).toFixed(1)}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>Sin perfil</td>
+                  <td className="table-code">{metrics.sinPerfil}</td>
+                  <td className="table-code">
+                    {total > 0 ? ((metrics.sinPerfil / total) * 100).toFixed(1) : '0.0'}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>Con prediccion del modelo</td>
+                  <td className="table-code">{metrics.conPrediccion}</td>
+                  <td className="table-code">
+                    {(metrics.porcentajes?.coberturaPrediccion ?? 0).toFixed(1)}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>Sin prediccion (con perfil)</td>
+                  <td className="table-code">{metrics.sinPrediccion}</td>
+                  <td className="table-code">
+                    {total > 0 ? ((metrics.sinPrediccion / total) * 100).toFixed(1) : '0.0'}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span className="risk-dot bajo" aria-hidden="true" /> Riesgo bajo
+                  </td>
+                  <td className="table-code">{dist.bajo || 0}</td>
+                  <td className="table-code">
+                    {(metrics.porcentajes?.riesgoBajoPct ?? 0).toFixed(1)}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span className="risk-dot medio" aria-hidden="true" /> Riesgo medio
+                  </td>
+                  <td className="table-code">{dist.medio || 0}</td>
+                  <td className="table-code">
+                    {(metrics.porcentajes?.riesgoMedioPct ?? 0).toFixed(1)}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span className="risk-dot alto" aria-hidden="true" /> Riesgo alto
+                  </td>
+                  <td className="table-code">{dist.alto || 0}</td>
+                  <td className="table-code">
+                    {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}%
+                  </td>
+                </tr>
+                <tr>
+                  <td>Promedio estimado de puntaje Saber Pro</td>
+                  <td className="table-code">
+                    {metrics.promedioPuntaje !== null && metrics.promedioPuntaje !== undefined
+                      ? `${metrics.promedioPuntaje} pts`
+                      : '—'}
+                  </td>
+                  <td className="table-code">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </article>
+
+          {/* ---- 5) Top estudiantes en riesgo ---- */}
+          <article className="card">
+            <div className="section-header">
+              <h2>Top estudiantes en riesgo</h2>
+              <span className="live-chip">5 con peor prediccion</span>
+            </div>
+            {topRisk.length === 0 ? (
+              <div className="data-table-empty">
+                <p>Aun no hay estudiantes con prediccion para mostrar el ranking de riesgo.</p>
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Documento</th>
+                    <th>Nombre</th>
+                    <th>Puntaje estimado</th>
+                    <th>Probabilidad</th>
+                    <th>Clase</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topRisk.map((s) => (
+                    <tr key={s.id} className={s.clase === 'alto' ? 'pending' : ''}>
+                      <td className="table-code">{s.documento}</td>
+                      <td>{s.username || '—'}</td>
+                      <td className="table-code">
+                        {s.puntajeEstimado !== null && s.puntajeEstimado !== undefined
+                          ? `${Math.round(s.puntajeEstimado)} pts`
+                          : '—'}
+                      </td>
+                      <td className="table-code">
+                        {s.probabilidad !== null && s.probabilidad !== undefined
+                          ? `${Math.round(s.probabilidad * 100)}%`
+                          : '—'}
+                      </td>
+                      <td>
+                        <span className={`risk-pill ${s.clase || 'bajo'}`}>{s.clase || 'bajo'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </article>
+        </>
+      ) : null}
     </section>
   )
 }
 
+// Renderiza una mini-barra horizontal usada en distribuciones demograficas.
+// `pct` es 0-100, `color` es una clase CSS (info, success, warning, etc).
+function MiniBar({ pct, color = 'info' }) {
+  const safe = Math.max(0, Math.min(100, Number(pct) || 0))
+  return (
+    <div className="mini-bar-track" aria-label={`${safe.toFixed(1)}%`}>
+      <div className={`mini-bar-fill mini-bar-${color}`} style={{ width: `${safe}%` }} />
+    </div>
+  )
+}
+
+// Mapa de colores por categoria (info/success/warning) para las mini-barras.
+const COLOR_BY_KEY = {
+  // Nivel de ingles: del mas bajo al mas alto
+  'A1': 'danger',
+  'A2': 'warning',
+  'A2+': 'warning',
+  'B1': 'info',
+  'B1+': 'info',
+  'B2': 'cyan',
+  'C1': 'success',
+  'C2': 'success',
+  // Genero
+  'M': 'info',
+  'F': 'rose',
+  // Estrato (1-6)
+  '1': 'danger',
+  '2': 'warning',
+  '3': 'info',
+  '4': 'info',
+  '5': 'cyan',
+  '6': 'success',
+  // Trabaja
+  'true': 'warning',
+  'false': 'success',
+}
+
 function AdminReportesSection() {
-  const [status, setStatus] = useState('loading')
+  const [summaryStatus, setSummaryStatus] = useState('loading')
+  const [cohortStatus, setCohortStatus] = useState('loading')
+  const [summary, setSummary] = useState(null)
   const [students, setStudents] = useState([])
   const [error, setError] = useState(null)
 
   useEffect(() => {
     let alive = true
-    setStatus('loading')
-    apiGetCohort('all')
-      .then((res) => {
+    setSummaryStatus('loading')
+    setCohortStatus('loading')
+
+    Promise.all([apiGetCohort('all'), apiGetAdminReportSummary('all')])
+      .then(([cohort, sum]) => {
         if (!alive) return
-        if (!res.ok) {
-          setError(res.message || 'No se pudo cargar la cohorte.')
-          setStatus('error')
-          return
+        if (cohort.ok) {
+          setStudents(cohort.students || [])
+          setCohortStatus('ready')
+        } else {
+          setError(cohort.message || 'Error cargando cohorte.')
+          setCohortStatus('error')
         }
-        setStudents(res.students || [])
-        setStatus('ready')
+        if (sum.ok) {
+          setSummary(sum)
+          setSummaryStatus('ready')
+        } else {
+          setError(sum.message || 'Error generando el resumen.')
+          setSummaryStatus('error')
+        }
       })
       .catch((err) => {
         if (!alive) return
         setError(err.message || 'Error de red.')
-        setStatus('error')
+        setSummaryStatus('error')
+        setCohortStatus('error')
       })
     return () => {
       alive = false
@@ -4521,27 +5296,72 @@ function AdminReportesSection() {
   }, [])
 
   function exportCsv() {
+    // 30+ columnas academicas + contacto + estado del modelo.
     const headers = [
       'documento',
       'nombre',
       'email',
       'programa',
-      'rol',
-      'clase',
+      'activo',
+      'completado',
+      'semestre',
+      'estrato',
+      'edad',
+      'genero',
+      'ciudad',
+      'trabaja',
+      'acceso_internet',
+      'acceso_pc',
+      'horas_estudio_semana',
+      'nivel_ingles',
+      'simulacros_realizados',
+      'asistencia_pct',
+      'promedio_acumulado',
+      'promedio_basicas',
+      'promedio_ingenieria',
+      'promedio_programacion',
+      'promedio_matematica_estadistica',
+      'num_reprobadas',
+      'pct_creditos',
+      'creditos_aprobados',
+      'asignaturas_aprobadas',
+      'clase_predicha',
       'puntaje_estimado',
       'probabilidad',
-      'activo',
+      'fecha_prediccion',
     ]
     const rows = students.map((s) => [
       s.documento || '',
       s.username || '',
       s.email || '',
       s.program || '',
-      s.role || '',
+      s.isActive === false ? 'no' : 'si',
+      s.completed ? 'si' : 'no',
+      s.semestre ?? '',
+      s.estrato ?? '',
+      s.edad ?? '',
+      s.genero || '',
+      s.ciudad || '',
+      s.trabaja === true ? 'si' : s.trabaja === false ? 'no' : '',
+      s.accesoInternet === true ? 'si' : s.accesoInternet === false ? 'no' : '',
+      s.accesoPc === true ? 'si' : s.accesoPc === false ? 'no' : '',
+      s.horasEstudio ?? '',
+      s.nivelIngles || '',
+      s.simulacrosRealizados ?? '',
+      s.asistencia ?? '',
+      s.promedioAcumulado ?? '',
+      s.promedioBasicas ?? '',
+      s.promedioIngenieria ?? '',
+      s.promedioProgramacion ?? '',
+      s.promedioMatEstadistica ?? '',
+      s.numReprobadas ?? '',
+      s.pctCreditos ?? '',
+      s.creditosAprobados ?? '',
+      s.asignaturasAprobadas ?? '',
       s.clase || '',
       s.puntajeEstimado ?? '',
       s.probabilidad ?? '',
-      s.isActive === false ? 'no' : 'si',
+      s.predictionAt || '',
     ])
     const escape = (v) => {
       const str = String(v ?? '')
@@ -4555,57 +5375,344 @@ function AdminReportesSection() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `cohorte_saberpro_${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `reporte_saberpro_${new Date().toISOString().slice(0, 10)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
 
+  // Computos derivados (segun datos disponibles).
+  const total = summary?.total ?? students.length
   const totalActivos = students.filter((s) => s.isActive !== false).length
+  const totalConPerfil = students.filter((s) => s.completed === true).length
   const totalConPrediccion = students.filter((s) => s.puntajeEstimado !== null && s.puntajeEstimado !== undefined).length
+  const totalRiesgoAlto = students.filter((s) => s.clase === 'alto').length
+  const promedios = summary?.promedios || {}
+
+  // Distribucion de puntaje la recalculamos en frontend para tener widths exactos.
+  // Los datos ya vienen del backend en summary.histogramaPuntaje.
+  const histograma = summary?.histogramaPuntaje || []
+  const maxHistCount = histograma.reduce((m, h) => Math.max(m, h.count), 0)
+  const totalInHist = histograma.reduce((a, h) => a + h.count, 0) || 1
+
+  // Distribuciones principales (accedemos con fallback seguro)
+  const distIngles = (summary?.distribuciones?.nivelIngles) || []
+  const distGenero = (summary?.distribuciones?.genero) || []
+  const distEstrato = (summary?.distribuciones?.estrato) || []
+  const distTrabaja = (summary?.distribuciones?.trabaja) || []
+  const distSemestre = (summary?.distribuciones?.semestre) || []
+  const distHoras = (summary?.distribuciones?.horasEstudio) || []
+  const distCiudades = (summary?.distribuciones?.ciudadesTop) || []
 
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
       <div className="cohort-toolbar">
         <div>
           <p className="banner-kicker">Reportes</p>
-          <h2>Exportacion de la cohorte</h2>
+          <h2>Cohorte y desempeno institucional</h2>
+          <p style={{ margin: '0.5rem 0 0', color: 'var(--text-soft)', fontSize: '0.92rem', maxWidth: 720 }}>
+            Distribuciones academicas y demograficas de los estudiantes, calculadas en vivo
+            contra la base de datos institucional y las predicciones del modelo
+            <code> real-data-v1</code>.
+          </p>
         </div>
         <div className="filter-group" style={{ display: 'flex', gap: '0.5rem' }}>
           <button
             className="auth-button"
             type="button"
             onClick={exportCsv}
-            disabled={status !== 'ready' || students.length === 0}
+            disabled={cohortStatus !== 'ready' || students.length === 0}
           >
             <Icon name="download" size={16} />
-            Exportar CSV
+            Exportar CSV completo
           </button>
         </div>
       </div>
-      {status === 'loading' ? <p className="student-interpretation">Cargando cohorte...</p> : null}
-      {status === 'error' ? <p className="auth-feedback error">{error}</p> : null}
-      {status === 'ready' ? (
-        <div className="cohort-metrics-grid">
-          <div className="cohort-metric-card">
-            <span className="label">Total de estudiantes</span>
-            <span className="value">{students.length}</span>
-            <span className="hint">Cuentas con rol estudiante</span>
-          </div>
-          <div className="cohort-metric-card">
-            <span className="label">Cuentas activas</span>
-            <span className="value">{totalActivos}</span>
-            <span className="hint">Con acceso al sistema</span>
-          </div>
-          <div className="cohort-metric-card">
-            <span className="label">Con prediccion</span>
-            <span className="value">{totalConPrediccion}</span>
-            <span className="hint">Han completado el perfil</span>
-          </div>
-        </div>
+
+      {summaryStatus === 'loading' && cohortStatus === 'loading' ? (
+        <p className="student-interpretation">Cargando reporte...</p>
+      ) : null}
+      {error ? <p className="auth-feedback error">{error}</p> : null}
+
+      {summaryStatus === 'ready' ? (
+        <>
+          {/* ---- 1) KPI cards principales (8) ---- */}
+          <section className="reportes-kpi-grid">
+            <article className="kpi-card indigo">
+              <div className="kpi-icon"><Icon name="users" size={22} /></div>
+              <p className="kpi-value">{total}</p>
+              <p className="kpi-label">Total estudiantes</p>
+              <p className="kpi-detail">Registrados en la cohorte</p>
+            </article>
+            <article className="kpi-card cyan">
+              <div className="kpi-icon"><Icon name="check" size={22} /></div>
+              <p className="kpi-value">{totalActivos}</p>
+              <p className="kpi-label">Cuentas activas</p>
+              <p className="kpi-detail">Con acceso al sistema</p>
+            </article>
+            <article className="kpi-card lime">
+              <div className="kpi-icon"><Icon name="user" size={22} /></div>
+              <p className="kpi-value">{totalConPerfil}</p>
+              <p className="kpi-label">Con perfil completo</p>
+              <p className="kpi-detail">{pctValue(totalConPerfil, total)}% de la cohorte</p>
+            </article>
+            <article className="kpi-card violet">
+              <div className="kpi-icon"><Icon name="target" size={22} /></div>
+              <p className="kpi-value">{totalConPrediccion}</p>
+              <p className="kpi-label">Con prediccion del modelo</p>
+              <p className="kpi-detail">{pctValue(totalConPrediccion, total)}% de la cohorte</p>
+            </article>
+            <article className="kpi-card rose">
+              <div className="kpi-icon"><Icon name="warning" size={22} /></div>
+              <p className="kpi-value">{totalRiesgoAlto}</p>
+              <p className="kpi-label">En riesgo alto</p>
+              <p className="kpi-detail">{pctValue(totalRiesgoAlto, total)}% de la cohorte</p>
+            </article>
+            <article className="kpi-card amber">
+              <div className="kpi-icon"><Icon name="trend" size={22} /></div>
+              <p className="kpi-value">
+                {promedios.promedioAcumulado !== null && promedios.promedioAcumulado !== undefined
+                  ? promedios.promedioAcumulado.toFixed(1)
+                  : '—'}
+              </p>
+              <p className="kpi-label">Promedio acumulado</p>
+              <p className="kpi-detail">Calificacion institucional</p>
+            </article>
+            <article className="kpi-card emerald">
+              <div className="kpi-icon"><Icon name="chart" size={22} /></div>
+              <p className="kpi-value">
+                {promedios.asistenciaPromedio !== null && promedios.asistenciaPromedio !== undefined
+                  ? `${Math.round(promedios.asistenciaPromedio)}%`
+                  : '—'}
+              </p>
+              <p className="kpi-label">Asistencia promedio</p>
+              <p className="kpi-detail">Indice de presencia</p>
+            </article>
+            <article className="kpi-card cyan">
+              <div className="kpi-icon"><Icon name="book" size={22} /></div>
+              <p className="kpi-value">
+                {promedios.horasEstudioPromedio !== null && promedios.horasEstudioPromedio !== undefined
+                  ? `${Math.round(promedios.horasEstudioPromedio)} h`
+                  : '—'}
+              </p>
+              <p className="kpi-label">Horas de estudio/sem</p>
+              <p className="kpi-detail">Promedio cohorte</p>
+            </article>
+          </section>
+
+          {/* ---- 2) Promedios academicos ---- */}
+          <article className="card">
+            <div className="section-header compact">
+              <h2>Promedios academicos</h2>
+            </div>
+            <div className="reportes-metrics-grid">
+              <MetricBox label="Promedio acumulado" value={promedios.promedioAcumulado} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio matematicas basicas" value={promedios.promedioBasicas} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio ingenieria" value={promedios.promedioIngenieria} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio programacion" value={promedios.promedioProgramacion} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio mate/estadistica" value={promedios.promedioMatEstadistica} decimals={2} unit="/5.0" />
+              <MetricBox label="Asistencia promedio" value={promedios.asistenciaPromedio} decimals={0} unit="%" />
+              <MetricBox label="Edad promedio" value={promedios.edadPromedio} decimals={0} unit=" anos" />
+              <MetricBox label="Avance creditos" value={promedios.avanceCreditosPromedio} decimals={0} unit="%" />
+              <MetricBox label="Total reprobadas" value={promedios.totalReprobadas} decimals={0} />
+              <MetricBox label="Creditos aprobados (total)" value={promedios.totalCreditosAprobados} decimals={0} />
+              <MetricBox label="Asignaturas aprobadas (total)" value={promedios.totalAsignaturasAprobadas} decimals={0} />
+              <MetricBox label="Simulacros realizados (total)" value={promedios.totalSimulacros} decimals={0} />
+            </div>
+          </article>
+
+          {/* ---- 3) Distribucion por puntaje (histograma) ---- */}
+          <article className="card">
+            <div className="section-header">
+              <h2>Distribución de puntaje estimado</h2>
+              <span className="live-chip">{totalInHist} estudiantes evaluados</span>
+            </div>
+            {maxHistCount === 0 ? (
+              <div className="data-table-empty">
+                <p>No hay predicciones para esta cohorte todavia.</p>
+              </div>
+            ) : (
+              <div className="histogram-bars">
+                {histograma.map((bin) => {
+                  const pctBar = maxHistCount > 0 ? (bin.count / maxHistCount) * 100 : 0
+                  const pctCohorte = totalInHist > 0 ? (bin.count / totalInHist) * 100 : 0
+                  return (
+                    <div key={bin.key} className="histogram-row">
+                      <div className="histogram-label">{bin.key}</div>
+                      <div className="histogram-track">
+                        <div
+                          className="histogram-fill"
+                          style={{ width: `${pctBar}%` }}
+                        >
+                          <span className="histogram-value">{bin.count}</span>
+                        </div>
+                      </div>
+                      <div className="histogram-pct">{pctCohorte.toFixed(1)}%</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </article>
+
+          {/* ---- 4) Distribuciones demograficas (en grid) ---- */}
+          <section className="reportes-distrib-grid">
+            <DistCard title="Nivel de ingles" rows={distIngles} />
+            <DistCard title="Genero" rows={distGenero} />
+            <DistCard title="Estrato socioeconomico" rows={distEstrato} />
+            <DistCard title="Trabaja actualmente" rows={distTrabaja.map((r) => ({
+              ...r,
+              key: r.key === 'true' ? 'Si' : r.key === 'false' ? 'No' : r.key,
+            }))} />
+            <DistCard title="Horas de estudio semanales" rows={distHoras} />
+            <DistCard title="Top 10 ciudades" rows={distCiudades} />
+          </section>
+
+          {/* ---- 5) Distribucion por semestre (en grid aparte) ---- */}
+          <article className="card">
+            <div className="section-header compact">
+              <h2>Estudiantes por semestre</h2>
+            </div>
+            {distSemestre.length === 0 ? (
+              <div className="data-table-empty"><p>Sin datos de semestre.</p></div>
+            ) : (
+              <div className="histogram-bars">
+                {distSemestre.map((bin) => {
+                  const maxSemestre = Math.max(...distSemestre.map((b) => b.count))
+                  const pctBar = maxSemestre > 0 ? (bin.count / maxSemestre) * 100 : 0
+                  const pctCohorte = total > 0 ? (bin.count / total) * 100 : 0
+                  return (
+                    <div key={bin.key} className="histogram-row">
+                      <div className="histogram-label">Sem {bin.key}</div>
+                      <div className="histogram-track">
+                        <div className="histogram-fill" style={{ width: `${pctBar}%` }}>
+                          <span className="histogram-value">{bin.count}</span>
+                        </div>
+                      </div>
+                      <div className="histogram-pct">{pctCohorte.toFixed(1)}%</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </article>
+
+          {/* ---- 6) Top 5 mejor y peor ---- */}
+          <section className="grid-2">
+            <article className="card">
+              <div className="section-header compact">
+                <h2>Top 5 mejor puntaje estimado</h2>
+              </div>
+              {summary.topMejor.length === 0 ? (
+                <div className="data-table-empty"><p>Sin datos.</p></div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Documento</th>
+                      <th>Nombre</th>
+                      <th>Puntaje</th>
+                      <th>Prob.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.topMejor.map((s) => (
+                      <tr key={s.id}>
+                        <td className="table-code">{s.documento}</td>
+                        <td>{s.nombre}</td>
+                        <td className="table-code">{Math.round(s.puntajeEstimado)} pts</td>
+                        <td className="table-code">{Math.round((s.probabilidad || 0) * 100)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </article>
+
+            <article className="card">
+              <div className="section-header compact">
+                <h2>Top 5 peor puntaje estimado</h2>
+              </div>
+              {summary.topPeor.length === 0 ? (
+                <div className="data-table-empty"><p>Sin datos.</p></div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Documento</th>
+                      <th>Nombre</th>
+                      <th>Puntaje</th>
+                      <th>Prob.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.topPeor.map((s) => (
+                      <tr key={s.id} className="pending">
+                        <td className="table-code">{s.documento}</td>
+                        <td>{s.nombre}</td>
+                        <td className="table-code">{Math.round(s.puntajeEstimado)} pts</td>
+                        <td className="table-code">{Math.round((s.probabilidad || 0) * 100)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </article>
+          </section>
+        </>
       ) : null}
     </section>
+  )
+}
+
+// Helper: porcentaje seguro (evita division por cero).
+function pctValue(n, total) {
+  if (!total || total === 0) return '0'
+  return ((Number(n) / Number(total)) * 100).toFixed(1)
+}
+
+// Caja de metrica academica con valor grande + unidad.
+function MetricBox({ label, value, decimals = 2, unit }) {
+  let display = '—'
+  if (value !== null && value !== undefined && !Number.isNaN(Number(value))) {
+    display = `${Number(value).toFixed(decimals)}${unit || ''}`
+  }
+  return (
+    <div className="reportes-metric-box">
+      <p className="reportes-metric-label">{label}</p>
+      <p className="reportes-metric-value">{display}</p>
+    </div>
+  )
+}
+
+// Tarjeta de distribucion categorica con mini-barras horizontales.
+function DistCard({ title, rows }) {
+  const safeRows = rows || []
+  return (
+    <article className="card">
+      <div className="section-header compact">
+        <h2>{title}</h2>
+      </div>
+      {safeRows.length === 0 ? (
+        <div className="data-table-empty"><p>Sin datos.</p></div>
+      ) : (
+        <ul className="dist-list">
+          {safeRows.map((r) => (
+            <li key={r.key} className="dist-list-item">
+              <div className="dist-list-header">
+                <span className="dist-list-key">{r.key}</span>
+                <span className="dist-list-meta">
+                  <strong>{r.count}</strong>
+                  <span className="dist-list-pct">{(r.pct || 0).toFixed(1)}%</span>
+                </span>
+              </div>
+              <MiniBar pct={r.pct} color={COLOR_BY_KEY[r.key] || 'info'} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </article>
   )
 }
 
@@ -4707,14 +5814,6 @@ function AdminStatsPanel() {
               <tr>
                 <td>Sistemas</td>
                 <td className="table-code">{byProgram?.sistemas ?? 0}</td>
-              </tr>
-              <tr>
-                <td>Industrial</td>
-                <td className="table-code">{byProgram?.industrial ?? 0}</td>
-              </tr>
-              <tr>
-                <td>Todas (all)</td>
-                <td className="table-code">{byProgram?.all ?? 0}</td>
               </tr>
             </tbody>
           </table>
@@ -4901,6 +6000,7 @@ function AdminUsersPanel({ currentUser }) {
   const [modalUser, setModalUser] = useState(null) // null = cerrado, undefined = crear
   const [refreshKey, setRefreshKey] = useState(0)
   const [busy, setBusy] = useState(false)
+  const toast = useToast()
 
   async function load() {
     setStatus('loading')
@@ -4930,21 +6030,24 @@ function AdminUsersPanel({ currentUser }) {
 
   async function handleToggleActive(user) {
     if (busy) return
-    if (user.isActive) {
-      const ok = window.confirm(
-        `Desactivar a ${user.username}? No podra iniciar sesion hasta que lo reactives.`,
-      )
-      if (!ok) return
-    }
+    await doToggleActive(user)
+  }
+
+  async function doToggleActive(user) {
     setBusy(true)
     try {
       const res = user.isActive
         ? await apiDeactivateAdminUser(user.id)
         : await apiActivateAdminUser(user.id)
       if (!res.ok) {
-        window.alert(res.message || 'Operacion no completada.')
+        toast.error(res.message || 'Operacion no completada.')
         return
       }
+      toast.success(
+        user.isActive
+          ? `${user.username} fue desactivado.`
+          : `${user.username} fue reactivado.`,
+      )
       setRefreshKey((k) => k + 1)
     } finally {
       setBusy(false)
@@ -5126,12 +6229,208 @@ function AdminUsersPanel({ currentUser }) {
   )
 }
 
+// ---- Acciones del audit log ----
+// code -> { label, icon, tone, description }
+// tone es una de: success | danger | info | warning | muted | neutral
+const AUDIT_ACTIONS = {
+  LOGIN_SUCCESS: {
+    label: 'Inicio de sesion exitoso',
+    icon: 'check',
+    tone: 'success',
+    description: 'El usuario ingreso correctamente al sistema.',
+  },
+  LOGIN_FAIL: {
+    label: 'Inicio de sesion fallido',
+    icon: 'x',
+    tone: 'danger',
+    description: 'Intento de inicio de sesion con credenciales incorrectas.',
+  },
+  PASSWORD_CHANGE: {
+    label: 'Cambio de contrasena',
+    icon: 'settings',
+    tone: 'info',
+    description: 'El usuario modifico su contrasena desde su cuenta.',
+  },
+  RECOVER_REQUEST: {
+    label: 'Solicitud de recuperacion',
+    icon: 'warning',
+    tone: 'warning',
+    description: 'Se solicito recuperacion de contrasena para una cuenta.',
+  },
+  USER_UPSERT: {
+    label: 'Creacion de usuario',
+    icon: 'userPlus',
+    tone: 'success',
+    description: 'Se creo o reasigno un usuario del sistema.',
+  },
+  USER_EDIT: {
+    label: 'Edicion de usuario',
+    icon: 'settings',
+    tone: 'info',
+    description: 'Se modificaron datos de un usuario existente.',
+  },
+  USER_DEACTIVATE: {
+    label: 'Usuario desactivado',
+    icon: 'x',
+    tone: 'danger',
+    description: 'Se desactivo una cuenta. No podra iniciar sesion hasta reactivarla.',
+  },
+  USER_ACTIVATE: {
+    label: 'Usuario reactivado',
+    icon: 'check',
+    tone: 'success',
+    description: 'Se reactivo una cuenta previamente desactivada.',
+  },
+  update_user: {
+    label: 'Actualizacion de usuario',
+    icon: 'settings',
+    tone: 'info',
+    description: 'Se actualizaron datos de un usuario.',
+  },
+  EXPORT_METRICS_CSV: {
+    label: 'Exportar metricas CSV',
+    icon: 'download',
+    tone: 'muted',
+    description: 'Se descargo el CSV de metricas del modelo.',
+  },
+}
+
+function getAuditActionMeta(code) {
+  return (
+    AUDIT_ACTIONS[code] || {
+      label: code,
+      icon: 'crown',
+      tone: 'neutral',
+      description: 'Accion registrada en el sistema.',
+    }
+  )
+}
+
+// Lista ordenada segun la gravedad / naturaleza (las sensibles al inicio)
+const AUDIT_ACTION_ORDER = [
+  'LOGIN_FAIL',
+  'RECOVER_REQUEST',
+  'USER_DEACTIVATE',
+  'USER_ACTIVATE',
+  'USER_UPSERT',
+  'USER_EDIT',
+  'update_user',
+  'PASSWORD_CHANGE',
+  'LOGIN_SUCCESS',
+  'EXPORT_METRICS_CSV',
+]
+
+function AuditDetailsModal({ entry, onClose }) {
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  if (!entry) return null
+
+  const meta = getAuditActionMeta(entry.accion)
+  const detalles = entry.detalles || {}
+  const detalleEntries = Object.entries(detalles)
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div
+        className={`audit-details-modal audit-details-${meta.tone}`}
+        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-labelledby="audit-modal-title"
+      >
+        <header className="audit-details-header">
+          <div className="audit-details-icon" aria-hidden="true">
+            <Icon name={meta.icon} size={22} />
+          </div>
+          <div className="audit-details-text">
+            <p className="audit-details-kicker">Detalle del evento</p>
+            <h3 id="audit-modal-title">{meta.label}</h3>
+            <p className="audit-details-subtitle">{meta.description}</p>
+          </div>
+          <button
+            type="button"
+            className="audit-details-close"
+            onClick={onClose}
+            aria-label="Cerrar"
+          >
+            <Icon name="x" size={16} />
+          </button>
+        </header>
+
+        <section className="audit-details-meta">
+          <div className="audit-details-meta-item">
+            <span className="audit-details-meta-label">Codigo</span>
+            <span className="audit-details-meta-value audit-code">{entry.accion}</span>
+          </div>
+          <div className="audit-details-meta-item">
+            <span className="audit-details-meta-label">Fecha y hora</span>
+            <span className="audit-details-meta-value">{formatDate(entry.createdAt)}</span>
+          </div>
+          <div className="audit-details-meta-item">
+            <span className="audit-details-meta-label">Administrador</span>
+            <span className="audit-details-meta-value">
+              {entry.adminEmail || (entry.adminId != null ? `id ${entry.adminId}` : '—')}
+            </span>
+          </div>
+          <div className="audit-details-meta-item">
+            <span className="audit-details-meta-label">Documento objetivo</span>
+            <span className="audit-details-meta-value audit-code">
+              {entry.targetDocumento || '—'}
+            </span>
+          </div>
+        </section>
+
+        <section className="audit-details-body">
+          <h4>Informacion capturada</h4>
+          {detalleEntries.length === 0 ? (
+            <p className="audit-details-empty">
+              Esta accion no registro informacion adicional.
+            </p>
+          ) : (
+            <dl className="audit-details-list">
+              {detalleEntries.map(([key, value]) => (
+                <div key={key} className="audit-details-row">
+                  <dt>{key}</dt>
+                  <dd>
+                    {typeof value === 'object' && value !== null
+                      ? <code>{JSON.stringify(value, null, 2)}</code>
+                      : String(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
+
+        <footer className="audit-details-actions">
+          <button
+            type="button"
+            className="audit-details-button primary"
+            onClick={onClose}
+          >
+            Cerrar
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 function AdminAuditPanel() {
   const [status, setStatus] = useState('loading')
   const [entries, setEntries] = useState([])
   const [filterEmail, setFilterEmail] = useState('')
+  const [filterAccion, setFilterAccion] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [error, setError] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const [viewingEntry, setViewingEntry] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -5140,6 +6439,9 @@ function AdminAuditPanel() {
       limit: 200,
       offset: 0,
       adminEmail: filterEmail || undefined,
+      accion: filterAccion || undefined,
+      createdAtFrom: dateFrom ? `${dateFrom} 00:00:00` : undefined,
+      createdAtTo: dateTo ? `${dateTo} 23:59:59` : undefined,
     })
       .then((res) => {
         if (cancelled) return
@@ -5159,16 +6461,78 @@ function AdminAuditPanel() {
     return () => {
       cancelled = true
     }
-  }, [filterEmail, refreshKey])
+  }, [filterEmail, filterAccion, dateFrom, dateTo, refreshKey])
+
+  async function handleExportCsv() {
+    setExporting(true)
+    try {
+      const res = await apiGetAdminAudit({
+        limit: 10000,
+        offset: 0,
+        adminEmail: filterEmail || undefined,
+        accion: filterAccion || undefined,
+        createdAtFrom: dateFrom ? `${dateFrom} 00:00:00` : undefined,
+        createdAtTo: dateTo ? `${dateTo} 23:59:59` : undefined,
+      })
+      if (!res.ok) {
+        alert(res.message || 'No se pudo exportar la auditoria.')
+        return
+      }
+      // Construir CSV en cliente. Escape RFC 4180. Exporta labels amigables
+      // en vez de los codigos crudos, para que el CSV sea legible.
+      const header = ['Fecha', 'Administrador', 'Accion', 'Documento objetivo', 'Detalles']
+      const escape = (v) => {
+        if (v === null || v === undefined) return ''
+        const s = String(v)
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+      }
+      const lines = [header.join(',')]
+      for (const e of res.entries || []) {
+        const meta = getAuditActionMeta(e.accion)
+        lines.push([
+          escape(e.createdAt),
+          escape(e.adminEmail || (e.adminId != null ? `id ${e.adminId}` : '')),
+          escape(meta.label),
+          escape(e.targetDocumento || ''),
+          escape(JSON.stringify(e.detalles || {})),
+        ].join(','))
+      }
+      const csv = lines.join('\n') + '\n'
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `audit_log_${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
+      <AuditDetailsModal
+        entry={viewingEntry}
+        onClose={() => setViewingEntry(null)}
+      />
+
       <div className="cohort-toolbar">
         <div>
           <p className="banner-kicker">Auditoria</p>
           <h2>Historial de acciones administrativas</h2>
         </div>
         <div className="filter-group" style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="auth-button-secondary"
+            type="button"
+            onClick={handleExportCsv}
+            disabled={exporting}
+          >
+            {exporting ? 'Exportando...' : 'Exportar CSV'}
+          </button>
           <button
             className="auth-button-secondary"
             type="button"
@@ -5179,15 +6543,61 @@ function AdminAuditPanel() {
         </div>
       </div>
 
-      <div className="cohort-toolbar" style={{ gap: '0.75rem' }}>
+      <div className="cohort-toolbar" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
         <input
           className="auth-input"
           type="search"
           placeholder="Filtrar por email del administrador"
           value={filterEmail}
           onChange={(e) => setFilterEmail(e.target.value)}
-          style={{ minWidth: 280 }}
+          style={{ minWidth: 240 }}
         />
+        <select
+          className="auth-input"
+          value={filterAccion}
+          onChange={(e) => setFilterAccion(e.target.value)}
+          style={{ minWidth: 220 }}
+        >
+          <option value="">Todas las acciones</option>
+          {AUDIT_ACTION_ORDER.map((code) => {
+            const meta = getAuditActionMeta(code)
+            return (
+              <option key={code} value={code}>
+                {meta.label}
+              </option>
+            )
+          })}
+        </select>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.85rem' }}>
+          Desde
+          <input
+            className="auth-input"
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.85rem' }}>
+          Hasta
+          <input
+            className="auth-input"
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+        <button
+          className="auth-button-secondary"
+          type="button"
+          onClick={() => {
+            setFilterEmail('')
+            setFilterAccion('')
+            setDateFrom('')
+            setDateTo('')
+          }}
+        >
+          Limpiar filtros
+        </button>
       </div>
 
       {status === 'loading' ? <p className="student-interpretation">Cargando...</p> : null}
@@ -5213,7 +6623,18 @@ function AdminAuditPanel() {
               {
                 key: 'accion',
                 label: 'Accion',
-                render: (e) => <span className="risk-pill bajo">{e.accion}</span>,
+                render: (e) => {
+                  const meta = getAuditActionMeta(e.accion)
+                  return (
+                    <span
+                      className={`audit-action-pill audit-action-${meta.tone}`}
+                      title={e.accion}
+                    >
+                      <Icon name={meta.icon} size={12} />
+                      <span>{meta.label}</span>
+                    </span>
+                  )
+                },
               },
               {
                 key: 'targetDocumento',
@@ -5222,15 +6643,36 @@ function AdminAuditPanel() {
                 render: (e) => e.targetDocumento || '—',
               },
               {
+                key: 'userAgent',
+                label: 'Cliente',
+                render: (e) => {
+                  const p = parseUserAgent(e.userAgent)
+                  const label = shortClientLabel(e.userAgent)
+                  const tone = p.isApi ? 'risk-pill medio' : 'risk-pill bajo'
+                  return (
+                    <span
+                      title={e.userAgent || ''}
+                      className={tone}
+                      style={{ fontSize: '0.72rem', padding: '0.18rem 0.5rem' }}
+                    >
+                      {p.isApi ? <Icon name="command" size={11} /> : <Icon name="user" size={11} />}
+                      <span style={{ marginLeft: '0.25rem' }}>{label}</span>
+                    </span>
+                  )
+                },
+              },
+              {
                 key: 'detalles',
                 label: 'Detalles',
                 render: (e) => (
-                  <details>
-                    <summary style={{ cursor: 'pointer' }}>ver</summary>
-                    <pre style={{ whiteSpace: 'pre-wrap', maxWidth: 480 }}>
-                      {JSON.stringify(e.detalles || {}, null, 2)}
-                    </pre>
-                  </details>
+                  <button
+                    type="button"
+                    className="audit-details-trigger"
+                    onClick={() => setViewingEntry(e)}
+                  >
+                    <Icon name="search" size={13} />
+                    <span>Ver</span>
+                  </button>
                 ),
               },
             ]}
@@ -5247,13 +6689,18 @@ function AdminAuditPanel() {
 // (saberpro_model.pkl, version real-data-v1) via FastAPI :8000.
 // =====================================================================
 
+// Origen del backend (sin /api). Sirve para resolver URLs absolutas a
+// archivos estaticos servidos por Express (e.g. /assets/analysis/*.png).
+const BACKEND_ORIGIN = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/api')
+  .replace(/\/api\/?$/, '')
+
 const ANALYSIS_IMAGES = [
-  { src: '/assets/analysis/comparacion_metricas.png', alt: 'Comparacion de metricas', title: 'Comparacion de metricas' },
-  { src: '/assets/analysis/matriz_confusion_gradientboostingclassifier.png', alt: 'Matriz de confusion (GB)', title: 'Matriz de confusion - Gradient Boosting' },
-  { src: '/assets/analysis/matriz_confusion_logisticregression.png', alt: 'Matriz de confusion (LR)', title: 'Matriz de confusion - Logistic Regression' },
-  { src: '/assets/analysis/feature_importance.png', alt: 'Importancia de features', title: 'Importancia de features' },
-  { src: '/assets/analysis/distribucion_clases.png', alt: 'Distribucion de clases', title: 'Distribucion real vs predicha' },
-  { src: '/assets/analysis/roc_curves.png', alt: 'Curvas ROC', title: 'Curvas ROC (one-vs-rest)' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/comparacion_metricas.png`, alt: 'Comparacion de metricas', title: 'Comparacion de metricas' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/matriz_confusion_gradientboostingclassifier.png`, alt: 'Matriz de confusion (GB)', title: 'Matriz de confusion - Gradient Boosting' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/matriz_confusion_logisticregression.png`, alt: 'Matriz de confusion (LR)', title: 'Matriz de confusion - Logistic Regression' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/feature_importance.png`, alt: 'Importancia de features', title: 'Importancia de features' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/distribucion_clases.png`, alt: 'Distribucion de clases', title: 'Distribucion real vs predicha' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/roc_curves.png`, alt: 'Curvas ROC', title: 'Curvas ROC (one-vs-rest)' },
 ]
 
 const PREDICT_FORM_DEFAULTS = {
@@ -5282,16 +6729,68 @@ function MetricCard({ label, value, hint, tone = 'default' }) {
   )
 }
 
+// Pill de estado de servicios: 3 puntos verde/amarillo/rojo segun health.
+function HealthPill({ health, status }) {
+  const dot = (state) => state === 'up' || state === 'connected'
+    ? 'health-up'
+    : state === 'degraded'
+      ? 'health-degraded'
+      : 'health-down'
+  if (status === 'loading') {
+    return <span className="muted-text small">Verificando servicios...</span>
+  }
+  if (!health) return <span className="muted-text small">Sin conexion</span>
+  return (
+    <div className="health-pill" aria-label="Estado de servicios">
+      <span className={`health-dot ${dot(health.express)}`}><span className="health-dot-mark" /> Express</span>
+      <span className={`health-dot ${dot(health.db)}`}><span className="health-dot-mark" /> BD</span>
+      <span
+        title={`FastAPI · modelo ${health.model_version || ''}`}
+        className={`health-dot ${dot(health.fastapi)}`}
+      >
+        <span className="health-dot-mark" /> FastAPI
+      </span>
+    </div>
+  )
+}
+
+// Fila de la tabla comparativa LR vs GB con destacado del ganador.
+function CompareRow({ label, a, b, fmt }) {
+  const cmp = (x, y) => (x == null && y == null ? 0 : x == null ? -1 : y == null ? 1 : y - x)
+  const winner = cmp(a, b)
+  return (
+    <tr>
+      <td className="compare-label">{label}</td>
+      <td className={`table-code ${winner > 0 ? 'compare-loser' : ''}`}>{a != null ? fmt(a) : '-'}</td>
+      <td className={`table-code ${winner < 0 ? 'compare-loser' : ''}`}>{b != null ? fmt(b) : '-'}</td>
+      <td>
+        {winner > 0 ? (
+          <span className="compare-winner compare-winner-lr">LR &star;</span>
+        ) : winner < 0 ? (
+          <span className="compare-winner compare-winner-gb">GB &star;</span>
+        ) : (
+          <span className="muted-text small">empate</span>
+        )}
+      </td>
+    </tr>
+  )
+}
+
 function AdminAnalysisPanel() {
   const [metricsStatus, setMetricsStatus] = useState('loading')
   const [metrics, setMetrics] = useState(null)
   const [metricsError, setMetricsError] = useState('')
   const [datasetStatus, setDatasetStatus] = useState('loading')
   const [datasetStats, setDatasetStats] = useState(null)
+  const [qualityStatus, setQualityStatus] = useState('loading')
+  const [quality, setQuality] = useState(null)
+  const [healthStatus, setHealthStatus] = useState('loading')
+  const [health, setHealth] = useState(null)
   const [form, setForm] = useState(PREDICT_FORM_DEFAULTS)
   const [predictStatus, setPredictStatus] = useState('idle')
   const [prediction, setPrediction] = useState(null)
   const [predictError, setPredictError] = useState('')
+  const [exportingCsv, setExportingCsv] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -5315,6 +6814,22 @@ function AdminAnalysisPanel() {
         else { setDatasetStatus('error') }
       })
       .catch(() => { if (!cancelled) setDatasetStatus('error') })
+    setQualityStatus('loading')
+    apiGetAnalysisDataQuality()
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) { setQuality(res); setQualityStatus('ready') }
+        else { setQualityStatus('error') }
+      })
+      .catch(() => { if (!cancelled) setQualityStatus('error') })
+    // Health: usamos el helper apiHealth existente (no requiere auth).
+    import('./api.js').then(({ apiHealth }) => {
+      apiHealth().then((res) => {
+        if (cancelled) return
+        if (res && (res.express || res.db)) { setHealth(res); setHealthStatus('ready') }
+        else { setHealthStatus('error') }
+      }).catch(() => { if (!cancelled) setHealthStatus('error') })
+    })
     return () => { cancelled = true }
   }, [])
 
@@ -5343,13 +6858,38 @@ function AdminAnalysisPanel() {
       })
   }
 
+  async function handleExportCsv() {
+    setExportingCsv(true)
+    try {
+      const res = await apiGetAnalysisMetricsCsv()
+      if (!res.ok) {
+        alert(res.message || 'No se pudo descargar el CSV.')
+        return
+      }
+      const url = URL.createObjectURL(res.blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'saberpro_metrics.csv'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExportingCsv(false)
+    }
+  }
+
   // Helpers para metricas
   const bestName = metrics?.best_model
   const bestM = bestName ? metrics.all_models[bestName] : null
+  const lrM = metrics?.all_models?.LogisticRegression
+  const gbM = metrics?.all_models?.GradientBoostingClassifier
+  const cmp = (a, b) => (a == null && b == null ? 0 : (a == null ? -1 : (b == null ? 1 : b - a)))
+  const fmt = (n, d = 4) => (n == null ? '-' : Number(n).toFixed(d))
 
   return (
     <div className="analysis-panel">
-      <section className="card welcome-banner">
+      <section className="card welcome-banner analysis-hero">
         <div>
           <p className="banner-kicker">Modelo predictivo</p>
           <h2>Analisis del modelo entrenado con datos reales</h2>
@@ -5362,42 +6902,47 @@ function AdminAnalysisPanel() {
             Alto &gt;= 4.0.
           </p>
         </div>
+        <HealthPill health={health} status={healthStatus} />
       </section>
 
-      <section className="metrics-grid">
-        <MetricCard
-          label="Mejor modelo"
-          value={bestName || (metricsStatus === 'loading' ? 'Cargando...' : 'N/D')}
-          hint="Seleccionado por accuracy en test set"
-          tone="primary"
-        />
-        <MetricCard
-          label="Accuracy"
-          value={bestM ? bestM.accuracy.toFixed(4) : '-'}
-          hint="Sobre 126 muestras de test"
-        />
-        <MetricCard
-          label="F1 weighted"
-          value={bestM ? bestM.f1_weighted.toFixed(4) : '-'}
-          hint="Promedio ponderado por soporte"
-        />
-        <MetricCard
-          label="ROC AUC (OvR)"
-          value={bestM && bestM.roc_auc_ovr_weighted != null
-            ? bestM.roc_auc_ovr_weighted.toFixed(4) : '-'}
-          hint="Promedio one-vs-rest"
-          tone="success"
-        />
-        <MetricCard
-          label="Filas usadas"
-          value={metrics ? `${metrics.rows_used} / ${metrics.rows_total}` : '-'}
-          hint="109 excluidas (promedio_acumulado = 0)"
-        />
-        <MetricCard
-          label="Version"
-          value={metrics ? metrics.model_version : '-'}
-          hint="Generado por ml/train_from_real.py"
-        />
+      <section className="analysis-kpis">
+        <article className="kpi-card indigo">
+          <div className="kpi-icon"><Icon name="trophy" size={22} /></div>
+          <p className="kpi-value kpi-value-text">{bestName || (metricsStatus === 'loading' ? 'Cargando...' : 'N/D')}</p>
+          <p className="kpi-label">Mejor modelo</p>
+          <p className="kpi-detail">Seleccionado por accuracy</p>
+        </article>
+        <article className="kpi-card cyan">
+          <div className="kpi-icon"><Icon name="target" size={22} /></div>
+          <p className="kpi-value">{bestM && bestM.accuracy != null ? bestM.accuracy.toFixed(4) : '-'}</p>
+          <p className="kpi-label">Accuracy</p>
+          <p className="kpi-detail">Sobre 126 muestras de test</p>
+        </article>
+        <article className="kpi-card violet">
+          <div className="kpi-icon"><Icon name="chart" size={22} /></div>
+          <p className="kpi-value">{bestM && bestM.f1_weighted != null ? bestM.f1_weighted.toFixed(4) : '-'}</p>
+          <p className="kpi-label">F1 weighted</p>
+          <p className="kpi-detail">Promedio ponderado por soporte</p>
+        </article>
+        <article className="kpi-card lime">
+          <div className="kpi-icon"><Icon name="trend" size={22} /></div>
+          <p className="kpi-value">{bestM && bestM.roc_auc_ovr_weighted != null
+            ? bestM.roc_auc_ovr_weighted.toFixed(4) : '-'}</p>
+          <p className="kpi-label">ROC AUC (OvR)</p>
+          <p className="kpi-detail">Promedio one-vs-rest</p>
+        </article>
+        <article className="kpi-card rose">
+          <div className="kpi-icon"><Icon name="file" size={22} /></div>
+          <p className="kpi-value">{metrics ? `${metrics.rows_used} / ${metrics.rows_total}` : '-'}</p>
+          <p className="kpi-label">Filas usadas</p>
+          <p className="kpi-detail">109 excluidas (promedio=0)</p>
+        </article>
+        <article className="kpi-card emerald">
+          <div className="kpi-icon"><Icon name="inbox" size={22} /></div>
+          <p className="kpi-value kpi-value-text">{metrics ? metrics.model_version : '-'}</p>
+          <p className="kpi-label">Version</p>
+          <p className="kpi-detail">train_from_real.py</p>
+        </article>
       </section>
 
       {metricsStatus === 'error' ? (
@@ -5407,27 +6952,162 @@ function AdminAnalysisPanel() {
       ) : null}
 
       <section className="card">
-        <h3>Distribucion del dataset</h3>
-        {datasetStatus === 'loading' ? <p>Cargando...</p> : null}
-        {datasetStatus === 'error' ? <p>No se pudo cargar la distribucion.</p> : null}
-        {datasetStatus === 'ready' && datasetStats ? (
+        <div className="section-header">
+          <h3>Comparativa de modelos (Logistic Regression vs Gradient Boosting)</h3>
+          <button
+            className="auth-button-secondary"
+            type="button"
+            onClick={handleExportCsv}
+            disabled={exportingCsv || !metrics}
+          >
+            {exportingCsv ? 'Descargando...' : 'Descargar CSV'}
+          </button>
+        </div>
+        <p className="muted-text">
+          Comparacion lado a lado de los dos modelos entrenados con
+          {' '}<code>desercion_metrics.json</code>. La estrella marca al ganador
+          por accuracy en el conjunto de test.
+        </p>
+        {metricsStatus === 'ready' && (lrM || gbM) ? (
+          <table className="ab-compare-table">
+            <thead>
+              <tr>
+                <th>Metrica</th>
+                <th>Logistic Regression</th>
+                <th>Gradient Boosting</th>
+                <th>Ganador</th>
+              </tr>
+            </thead>
+            <tbody>
+              <CompareRow label="Accuracy" a={lrM?.accuracy} b={gbM?.accuracy} fmt={fmt} />
+              <CompareRow label="Precision (weighted)" a={lrM?.precision_weighted} b={gbM?.precision_weighted} fmt={fmt} />
+              <CompareRow label="Recall (weighted)" a={lrM?.recall_weighted} b={gbM?.recall_weighted} fmt={fmt} />
+              <CompareRow label="F1 (weighted)" a={lrM?.f1_weighted} b={gbM?.f1_weighted} fmt={fmt} />
+              <CompareRow label="ROC AUC (OvR)" a={lrM?.roc_auc_ovr_weighted} b={gbM?.roc_auc_ovr_weighted} fmt={fmt} />
+            </tbody>
+          </table>
+        ) : null}
+        {metricsStatus === 'loading' ? <p>Cargando...</p> : null}
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <h3>Distribucion del dataset</h3>
+          <span className="live-chip">{datasetStats?.total || '—'} registros</span>
+        </div>
+        {datasetStatus === 'loading' ? (
           <div className="dataset-distribution">
-            {['Bajo', 'Medio', 'Alto'].map((cls) => (
-              <div key={cls} className={`dist-pill dist-${cls.toLowerCase()}`}>
-                <span className="dist-name">{cls}</span>
-                <span className="dist-value">{datasetStats.target_distribution[cls]}</span>
-              </div>
-            ))}
-            <div className="dist-pill dist-meta">
-              <span className="dist-name">Total</span>
-              <span className="dist-value">{datasetStats.total}</span>
-            </div>
+            <div className="skeleton skeleton-stacked" />
+            <div className="skeleton skeleton-stacked" />
+            <div className="skeleton skeleton-stacked" />
           </div>
+        ) : null}
+        {datasetStatus === 'error' ? <p className="muted-text">No se pudo cargar la distribucion.</p> : null}
+        {datasetStatus === 'ready' && datasetStats ? (
+          (() => {
+            const dist = datasetStats.target_distribution || {}
+            const total = datasetStats.total || 1
+            return (
+              <div className="dataset-distribution">
+                {['Bajo', 'Medio', 'Alto'].map((cls) => {
+                  const n = Number(dist[cls] || 0)
+                  const pct = total > 0 ? (n / total) * 100 : 0
+                  return (
+                    <div key={cls} className={`dataset-card dataset-${cls.toLowerCase()}`}>
+                      <div className="dataset-card-header">
+                        <span className="dataset-card-label">{cls}</span>
+                        <span className="dataset-card-pct">{pct.toFixed(1)}%</span>
+                      </div>
+                      <p className="dataset-card-value">{n}</p>
+                      <div className="dataset-card-bar">
+                        <div className="dataset-card-bar-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="dataset-card-meta">{n} de {total} registros</p>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()
         ) : null}
       </section>
 
       <section className="card">
-        <h3>Graficos del analisis</h3>
+        <div className="section-header">
+          <h3>Calidad del dataset</h3>
+          <span className="live-chip">Nulos y categoricas</span>
+        </div>
+        <p className="muted-text">
+          Conteo de valores nulos por columna usada por el modelo, mas la
+          distribucion de las variables categoricas. Una barra roja indica
+          {' '}&gt;= 5% de nulos (segun la practica habitual de limpieza de datos).
+        </p>
+        {qualityStatus === 'loading' ? <p className="muted-text">Cargando calidad...</p> : null}
+        {qualityStatus === 'error' ? <p className="muted-text">No se pudo cargar la calidad del dataset.</p> : null}
+        {qualityStatus === 'ready' && quality ? (
+          (() => {
+            const total = quality.totals.rows || 1
+            const nullsArr = Object.entries(quality.nulls || {})
+              .map(([col, n]) => {
+                const pct = (n / total) * 100
+                return { col, n, pct }
+              })
+              .sort((a, b) => b.pct - a.pct)
+            return (
+              <>
+                <div className="nulls-grid">
+                  {nullsArr.map(({ col, n, pct }) => {
+                    const tone = pct >= 5 ? 'high' : pct > 0 ? 'low' : 'none'
+                    return (
+                      <div key={col} className={`null-pill null-${tone}`}>
+                        <div className="null-pill-header">
+                          <span className="null-name" title={col}>{col}</span>
+                          <span className="null-pct">{pct.toFixed(1)}%</span>
+                        </div>
+                        <div className="null-bar">
+                          <div className={`null-bar-fill null-bar-${tone}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+                        </div>
+                        <span className="null-count">{n} nulos</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="histograms">
+                  {Object.entries(quality.categoricals || {}).map(([col, buckets]) => {
+                    const entries = Object.entries(buckets)
+                    const max = entries.reduce((m, [, v]) => Math.max(m, v), 0) || 1
+                    return (
+                      <div key={col} className="histogram">
+                        <h4 className="histogram-title">{col}</h4>
+                        <ul className="histogram-list">
+                          {entries.map(([bucket, n]) => (
+                            <li key={bucket} className="hist-row">
+                              <span className="hist-label">{bucket}</span>
+                              <div className="hist-track">
+                                <div
+                                  className="hist-fill"
+                                  style={{ width: `${(n / max) * 100}%` }}
+                                />
+                              </div>
+                              <span className="hist-count">{n}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )
+          })()
+        ) : null}
+      </section>
+
+      <section className="card">
+        <div className="section-header">
+          <h3>Graficos del analisis</h3>
+          <span className="live-chip">PNG · {ANALYSIS_IMAGES.length} figuras</span>
+        </div>
         <p className="muted-text">
           Generados por <code>ml/analyze_results.py</code> a partir del
           modelo serializado en <code>ml/trained_models/saberpro_model.pkl</code>.
@@ -5436,81 +7116,86 @@ function AdminAnalysisPanel() {
           {ANALYSIS_IMAGES.map((img) => (
             <figure key={img.src} className="analysis-figure">
               <img src={img.src} alt={img.alt} loading="lazy" />
-              <figcaption>{img.title}</figcaption>
+              <figcaption>
+                <span>{img.title}</span>
+              </figcaption>
             </figure>
           ))}
         </div>
       </section>
 
       <section className="card">
-        <h3>Probar el modelo</h3>
+        <div className="section-header">
+          <h3>Probar el modelo</h3>
+          <span className="live-chip">13 features</span>
+        </div>
         <p className="muted-text">
           Envia 13 features al modelo real. La peticion pasa por Express
           (puerto 4000) y luego a FastAPI (puerto 8000) que carga el .pkl.
         </p>
         <form onSubmit={handlePredict} className="predict-form">
-          <div className="form-grid">
-            <label>
+          <div className="form-grid predict-form-grid">
+            <label className="form-field">
               <span>Promedio basicas (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_materias_basicas}
                 onChange={(e) => updateField('promedio_materias_basicas', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Promedio ingenieria (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_ingenieria}
                 onChange={(e) => updateField('promedio_ingenieria', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Promedio programacion (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_programacion}
                 onChange={(e) => updateField('promedio_programacion', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Promedio matematica/estadistica (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_matematica_estadistica}
                 onChange={(e) => updateField('promedio_matematica_estadistica', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Asignaturas reprobadas (0-50)</span>
               <input type="number" min="0" max="50" required
                 value={form.asignaturas_reprobadas}
                 onChange={(e) => updateField('asignaturas_reprobadas', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Porcentaje avance (0-100)</span>
               <input type="number" step="0.1" min="0" max="100" required
                 value={form.porcentaje_avance}
                 onChange={(e) => updateField('porcentaje_avance', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Semestre actual (1-12)</span>
               <input type="number" min="1" max="12" required
                 value={form.semestre_actual}
                 onChange={(e) => updateField('semestre_actual', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Estrato (1-6)</span>
               <input type="number" min="1" max="6" required
                 value={form.estrato}
                 onChange={(e) => updateField('estrato', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Creditos aprobados (0-300)</span>
               <input type="number" min="0" max="300" required
                 value={form.creditos_aprobados}
                 onChange={(e) => updateField('creditos_aprobados', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Asignaturas aprobadas (0-80)</span>
               <input type="number" min="0" max="80" required
                 value={form.asignaturas_aprobadas}
                 onChange={(e) => updateField('asignaturas_aprobadas', Number(e.target.value))} />
             </label>
-            <label>
+            <label className="form-field">
               <span>Edad (14-80)</span>
               <input type="number" min="14" max="80" required
                 value={form.edad}
@@ -5548,39 +7233,120 @@ function AdminAnalysisPanel() {
           </div>
         ) : null}
 
-        {predictStatus === 'ready' && prediction ? (
+        {predictStatus === 'ready' && prediction && prediction.resultado ? (
+          (() => {
+            const outcome = (prediction.resultado || 'bajo').toLowerCase()
+            const probOrder = ['bajo', 'medio', 'alto']
+            const iconName = outcome === 'alto' ? 'warning' : outcome === 'medio' ? 'trophy' : 'check'
+            const conf = Number(prediction.confidence_pct ?? (prediction.probabilidad != null ? prediction.probabilidad * 100 : null))
+            const confDisplay = conf != null && !Number.isNaN(conf) ? `${conf.toFixed(1)}%` : '—'
+            const fallbackProbability = probOrder.reduce((acc, k) => {
+              acc[k] = Math.round((conf != null ? (1 - conf / 100) / 2 : 1 / 3) * 1000) / 10
+              return acc
+            }, {})
+            return (
           <div className="prediction-result">
-            <div className={`prediction-badge prediction-${prediction.resultado.toLowerCase()}`}>
-              <span className="prediction-label">Prediccion</span>
-              <span className="prediction-class">{prediction.resultado}</span>
-              <span className="prediction-confidence">
-                {(prediction.confidence_pct || (prediction.probabilidad * 100)).toFixed(1)}% confianza
+            <div className={`prediction-badge prediction-${outcome}`}>
+              <div className="prediction-icon" aria-hidden="true">
+                <Icon name={iconName} size={22} />
+              </div>
+              <div className="prediction-body">
+                <span className="prediction-label">Prediccion del modelo</span>
+                <span className="prediction-class">{prediction.resultado}</span>
+              </div>
+              <span className="prediction-confidence" title="Confianza del modelo">
+                {confDisplay} <small style={{ fontWeight: 500, opacity: 0.7 }}>confianza</small>
               </span>
             </div>
             {prediction.probabilities ? (
               <div className="probability-bars">
-                {['Bajo', 'Medio', 'Alto'].map((cls) => {
-                  const p = Number(prediction.probabilities[cls] || 0)
+                {probOrder.map((k) => {
+                  const label = k.charAt(0).toUpperCase() + k.slice(1)
+                  const p = Number(prediction.probabilities[label] ?? fallbackProbability[k])
                   return (
-                    <div key={cls} className={`prob-row prob-${cls.toLowerCase()}`}>
-                      <span className="prob-name">{cls}</span>
+                    <div key={k} className={`prob-row prob-${k}`}>
+                      <span className="prob-name">{label}</span>
                       <div className="prob-bar-track">
-                        <div className="prob-bar-fill" style={{ width: `${p * 100}%` }} />
+                        <div
+                          className="prob-bar-fill"
+                          style={{ width: `${Math.max(0, Math.min(100, p))}%` }}
+                        />
                       </div>
-                      <span className="prob-value">{(p * 100).toFixed(1)}%</span>
+                      <span className="prob-value">{p.toFixed(1)}%</span>
                     </div>
                   )
                 })}
+              </div>
+            ) : (
+              <div className="probability-bars">
+                {probOrder.map((k) => {
+                  const label = k.charAt(0).toUpperCase() + k.slice(1)
+                  const p = fallbackProbability[k]
+                  return (
+                    <div key={k} className={`prob-row prob-${k}`}>
+                      <span className="prob-name">{label}</span>
+                      <div className="prob-bar-track">
+                        <div className="prob-bar-fill" style={{ width: `${p}%` }} />
+                      </div>
+                      <span className="prob-value">{p.toFixed(1)}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            {Array.isArray(prediction.feature_contributions) && prediction.feature_contributions.length > 0 ? (
+              <div className="shap-section">
+                <h4>Contribuciones SHAP por feature</h4>
+                <p className="muted-text small">
+                  Cada barra muestra el aporte de la feature a la probabilidad
+                  de la clase predicha (<em>{prediction.resultado}</em>).
+                  {' '}Rojo = la aumenta, verde = la disminuye. Lista ordenada
+                  por magnitud de impacto.
+                </p>
+                {(() => {
+                  const maxAbs = Math.max(
+                    ...prediction.feature_contributions.map((c) => Math.abs(Number(c.contribution) || 0)),
+                    1e-9,
+                  )
+                  return (
+                    <ul className="shap-list">
+                      {prediction.feature_contributions.map((c, i) => {
+                        const val = Number(c.contribution) || 0
+                        const widthPct = (Math.abs(val) / maxAbs) * 50
+                        const isPos = val > 0
+                        return (
+                          <li key={`${c.feature}-${i}`} className="shap-row">
+                            <span className="shap-name" title={c.feature}>{c.feature}</span>
+                            <div className="shap-track">
+                              <div
+                                className={isPos ? 'shap-fill shap-pos' : 'shap-fill shap-neg'}
+                                style={{ width: `${widthPct}%` }}
+                                title={`${val.toFixed(4)}`}
+                              />
+                            </div>
+                            <span className={`shap-value ${isPos ? 'shap-pos' : 'shap-neg'}`}>
+                              {isPos ? '+' : ''}{val.toFixed(4)}
+                            </span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )
+                })()}
               </div>
             ) : null}
             {prediction.recomendacion ? (
               <p className="prediction-recommendation">{prediction.recomendacion}</p>
             ) : null}
-            <p className="muted-text small">
-              Modelo: {prediction.model_version}
-              {prediction.timestamp ? ` · ${new Date(prediction.timestamp).toLocaleString()}` : ''}
+            <p className="prediction-meta">
+              <strong>Modelo:</strong> {prediction.model_version || '—'}
+              {prediction.timestamp
+                ? ` · ${new Date(prediction.timestamp).toLocaleString()}`
+                : ''}
             </p>
           </div>
+            )
+          })()
         ) : null}
       </section>
     </div>
@@ -5613,6 +7379,10 @@ function AdminView({ user, onLogout, onUserUpdated }) {
               </div>
             </section>
             <AdminStatsPanel />
+            <section className="card" style={{ marginTop: '1.25rem' }}>
+              <h3 style={{ margin: '0 0 0.75rem' }}>Actividad reciente</h3>
+              <RecentActivity limit={5} />
+            </section>
           </>
         )
       case 1:
@@ -5620,15 +7390,26 @@ function AdminView({ user, onLogout, onUserUpdated }) {
       case 2:
         return <AdminAuditPanel />
       case 3:
-        return <AdminComparativoSection />
+        return (
+          <AdminComparativoErrorBoundary>
+            <AdminComparativoSection />
+          </AdminComparativoErrorBoundary>
+        )
       case 4:
         return <AdminReportesSection />
       case 5:
-        return <AdminAnalysisPanel />
+        return (
+          <AdminErrorBoundary section="Analisis del modelo">
+            <AdminAnalysisPanel />
+          </AdminErrorBoundary>
+        )
       default:
         return null
     }
   }
+
+  // Items de navegacion rapida para el command palette.
+  // (Eliminado 2026-10-14: ya no usamos command palette.)
 
   return (
     <DashboardShell
@@ -5638,9 +7419,13 @@ function AdminView({ user, onLogout, onUserUpdated }) {
       activeNavIndex={activeNavIndex}
       onNavSelect={setActiveNavIndex}
     >
-      <p className="student-interpretation" style={{ margin: 0 }}>
-        Seccion actual: <strong>{sectionLabel}</strong>
-      </p>
+      <Breadcrumbs
+        items={[
+          { label: 'Inicio', onClick: () => setActiveNavIndex(0) },
+          { label: 'Administrador' },
+          { label: sectionLabel },
+        ]}
+      />
       {renderSection()}
     </DashboardShell>
   )
@@ -5751,43 +7536,46 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
-      <Route
-        path="/login"
-        element={
-          session ? <Navigate to="/inicio" replace /> : <LoginForm onLogin={handleLogin} />
-        }
-      />
-      {/* El registro publico fue removido: los estudiantes se importan desde el backend.
-          Redirigimos a /login por si alguien conserva un enlace antiguo. */}
-      <Route path="/register" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
-      <Route
-        path="/forgot-password"
-        element={
-          session ? (
-            <Navigate to="/inicio" replace />
-          ) : (
-            <ForgotPasswordForm onRecover={handleRecover} />
-          )
-        }
-      />
-      <Route
-        path="/inicio"
-        element={
-          session ? (
-            <HomePage
-              user={session}
-              onLogout={handleLogout}
-              onUserUpdated={(updated) => setSession(normalizeUser(updated))}
-            />
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
-      <Route path="*" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
-    </Routes>
+    <ToastProvider>
+      <SessionBanner token={getToken()} />
+      <Routes>
+        <Route path="/" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
+        <Route
+          path="/login"
+          element={
+            session ? <Navigate to="/inicio" replace /> : <LoginForm onLogin={handleLogin} />
+          }
+        />
+        {/* El registro publico fue removido: los estudiantes se importan desde el backend.
+            Redirigimos a /login por si alguien conserva un enlace antiguo. */}
+        <Route path="/register" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
+        <Route
+          path="/forgot-password"
+          element={
+            session ? (
+              <Navigate to="/inicio" replace />
+            ) : (
+              <ForgotPasswordForm onRecover={handleRecover} />
+            )
+          }
+        />
+        <Route
+          path="/inicio"
+          element={
+            session ? (
+              <HomePage
+                user={session}
+                onLogout={handleLogout}
+                onUserUpdated={(updated) => setSession(normalizeUser(updated))}
+              />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route path="*" element={<Navigate to={session ? '/inicio' : '/login'} replace />} />
+      </Routes>
+    </ToastProvider>
   )
 }
 

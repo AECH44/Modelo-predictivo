@@ -45,6 +45,10 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
 }
 
 export async function apiLogin({ identifier, password }) {
+  // identifier = correo electronico del estudiante (CSV es roster autoritativo).
+  // password   = numero de documento (politica institucional).
+  // Para estudiantes, la respuesta puede incluir `prediction` si el backend
+  // logro auto-completar el perfil via lazy fallback desde dataset_saber_pro_real.
   const result = await request('/auth/login', {
     method: 'POST',
     body: { identifier, password },
@@ -145,6 +149,11 @@ export async function apiGetAdminStats() {
   return request('/admin/stats', { auth: true })
 }
 
+export async function apiGetAdminReportSummary(program = 'all') {
+  const qs = program && program !== 'all' ? `?program=${encodeURIComponent(program)}` : ''
+  return request(`/admin/report-summary${qs}`, { auth: true })
+}
+
 export async function apiListAdminUsers(filters = {}) {
   return request(`/admin/users${buildQuery(filters)}`, { auth: true })
 }
@@ -188,6 +197,11 @@ export async function apiGetAnalysisDatasetStats() {
   return request('/analysis/dataset-stats', { auth: true })
 }
 
+// Calidad del dataset: % nulos por columna + histogramas de categoricos.
+export async function apiGetAnalysisDataQuality() {
+  return request('/analysis/data-quality', { auth: true })
+}
+
 // Llama al proxy de Express que a su vez consulta FastAPI :8000 con el
 // .pkl real. features debe contener las 13 features del modelo.
 export async function apiPostAnalysisPredict(features) {
@@ -196,4 +210,23 @@ export async function apiPostAnalysisPredict(features) {
     auth: true,
     body: features,
   })
+}
+
+// Descarga las metricas del modelo como CSV. Devuelve un objeto Blob.
+// Construye la peticion con Bearer token porque el endpoint requiere auth.
+export async function apiGetAnalysisMetricsCsv() {
+  const headers = {}
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch(`${API_BASE}/analysis/export/metrics.csv`, { headers })
+  if (!res.ok) {
+    let msg = 'No se pudo descargar el CSV.'
+    try {
+      const data = await res.json()
+      msg = data.message || msg
+    } catch {}
+    return { ok: false, message: msg, status: res.status }
+  }
+  const blob = await res.blob()
+  return { ok: true, blob }
 }
