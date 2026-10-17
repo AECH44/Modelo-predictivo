@@ -21,7 +21,7 @@ shap==0.46.0
 
 # Manipulación de datos
 pandas==2.2.0
-numpy==1.26.0
+numpy==2.5.4
 
 # Utilidades HTTP
 python-multipart==0.0.6
