@@ -171,6 +171,14 @@ describe('predictor: estudiante sin datos academicos', () => {
     edad: 19,
   }
 
+  afterEach(() => {
+    // Este bloque usa el `fetch` real (no hay stub): el health check falla y
+    // queda cacheado como `false` en la instancia del modulo durante 30 s.
+    // Sin resetear el modulo, el describe siguiente importa esa misma
+    // instancia y el health check cacheado le hace caer al heuristico.
+    vi.resetModules()
+  })
+
   it('tieneDatosSuficientes es false sin promedio acumulado', async () => {
     const { tieneDatosSuficientes } = await import('../src/predictor.js')
     expect(tieneDatosSuficientes(perfilSinDatos)).toBe(false)
@@ -209,6 +217,9 @@ describe('predictor: contrato del modelo v2', () => {
   let respuestaV2
 
   beforeEach(() => {
+    // Instancia limpia del modulo: sin esto se hereda el cache de health de
+    // otro describe (30 s de TTL) y el stub de `fetch` nunca se consulta.
+    vi.resetModules()
     originalFetch = globalThis.fetch
     respuestaV2 = {
       resultado: 'Medio',
