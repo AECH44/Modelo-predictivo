@@ -39,22 +39,30 @@ async def predict_performance(
     """
     Realiza una predicción del rendimiento Saber Pro para un estudiante.
 
-    Parámetros del estudiante:
+    Parámetros del estudiante (14 features del modelo v2):
     - **promedio_acumulado**: Promedio académico acumulado (0-5)
-    - **promedio_basicas**: Promedio de materias básicas (0-5)
+    - **promedio_materias_basicas**: Promedio de materias básicas (0-5)
     - **promedio_ingenieria**: Promedio de materias de ingeniería (0-5)
-    - **num_reprobadas**: Número de materias reprobadas (0-20)
-    - **pct_creditos**: Porcentaje de créditos aprobados (0-100)
-    - **semestre**: Semestre actual (1-10)
+    - **promedio_programacion**: Promedio de programación (0-5)
+    - **promedio_matematica_estadistica**: Promedio de matemáticas y estadística (0-5)
+    - **asignaturas_reprobadas**: Número de materias reprobadas (0-50)
+    - **porcentaje_avance**: Porcentaje de créditos aprobados (0-100)
+    - **semestre_actual**: Semestre actual (1-12)
     - **estrato**: Estrato socioeconómico (1-6)
+    - **creditos_aprobados**: Créditos aprobados (0-300)
+    - **asignaturas_aprobadas**: Asignaturas aprobadas (0-80)
+    - **edad**: Edad (14-80)
     - **genero**: Género (M o F)
+    - **promedio_ingles_nivel**: Nivel de inglés (A1..C2)
 
     Retorna:
-    - **resultado**: Categoría de predicción (Bajo, Medio, Alto)
-    - **probabilidad**: Confianza de la predicción (0-1)
-    - **confidence_pct**: Porcentaje de confianza (0-100)
+    - **resultado**: Banda sobre el puntaje estimado (Bajo, Medio, Alto)
+    - **puntaje_estimado**: Puntaje global estimado en el Saber Pro
+    - **puntaje_minimo / puntaje_maximo**: Intervalo de predicción
+    - **areas**: Puntaje estimado por área (0-100)
+    - **probabilidad / probabilities**: Probabilidad de cada banda
     - **recomendacion**: Recomendaciones personalizadas
-    - **timestamp**: Fecha y hora de la predicción
+    - **feature_contributions**: Explicabilidad SHAP sobre el puntaje
     - **model_version**: Versión del modelo ML
     """
     try:

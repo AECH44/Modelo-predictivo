@@ -1,4 +1,4 @@
-# Servicio FastAPI que sirve el modelo ML real (saberpro_model.pkl).
+# Servicio FastAPI que sirve el modelo ML real.
 #
 # Estructura esperada dentro del contenedor:
 #   /ml-service/
@@ -6,8 +6,9 @@
 #       main.py
 #       services/prediction_service.py  <- usa BASE_DIR = Path(__file__).parent.parent.parent.parent
 #     ml-training/                      <- volumen montado (no en la imagen)
-#       trained_models/saberpro_model.pkl
-#       data/background_sample.pkl
+#       trained_models/saberpro_model_v2.pkl   <- modelo v2 (regresion del puntaje)
+#       trained_models/saberpro_model.pkl      <- modelo v1 (fallback)
+#       data/background_sample_v2.pkl
 #
 # BASE_DIR del prediction_service.py resuelve a "/" dentro del contenedor
 # (porque el archivo esta en /ml-service/app/services/ y sube 4 niveles).
@@ -31,7 +32,9 @@ RUN pip install -r requirements.txt
 COPY app ./app
 
 # El modelo y background se montan como volumenes en docker-compose.
-ENV MODEL_PATH=ml-training/trained_models/saberpro_model.pkl
+# El v2 (regresion del puntaje real) tiene prioridad; el v1 queda como fallback.
+ENV MODEL_PATH_V2=ml-training/trained_models/saberpro_model_v2.pkl \
+    MODEL_PATH=ml-training/trained_models/saberpro_model.pkl
 
 EXPOSE 8000
 

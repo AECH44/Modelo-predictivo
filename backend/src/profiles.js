@@ -111,11 +111,11 @@ export async function savePrediction(userId, prediction, executor) {
   const { rows } = await runner.query(
     `INSERT INTO predictions
        (user_id, clase, puntaje_estimado, probabilidad, factores, areas,
-        recomendaciones, snapshot, model_version)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9)
+        recomendaciones, snapshot, model_version, puntaje_minimo, puntaje_maximo)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11)
      RETURNING id, user_id, clase, puntaje_estimado, probabilidad,
                factores, areas, recomendaciones, snapshot, model_version,
-               created_at`,
+               puntaje_minimo, puntaje_maximo, created_at`,
     [
       userId,
       prediction.clase,
@@ -126,6 +126,8 @@ export async function savePrediction(userId, prediction, executor) {
       JSON.stringify(prediction.recomendaciones ?? {}),
       JSON.stringify(prediction.snapshot ?? {}),
       prediction.model_version || 'heuristic-v1',
+      prediction.puntaje_minimo ?? null,
+      prediction.puntaje_maximo ?? null,
     ],
   )
   return rowToPrediction(rows[0])
@@ -138,6 +140,9 @@ function rowToPrediction(row) {
     userId: row.user_id,
     clase: row.clase,
     puntajeEstimado: row.puntaje_estimado,
+    // Intervalo de prediccion (modelo v2). NULL en las predicciones viejas.
+    puntajeMinimo: row.puntaje_minimo ?? null,
+    puntajeMaximo: row.puntaje_maximo ?? null,
     probabilidad: Number(row.probabilidad),
     factores: row.factores,
     areas: row.areas,
@@ -151,7 +156,8 @@ function rowToPrediction(row) {
 export async function getLatestPrediction(userId) {
   const { rows } = await pool.query(
     `SELECT id, user_id, clase, puntaje_estimado, probabilidad,
-            factores, areas, recomendaciones, snapshot, model_version, created_at
+            factores, areas, recomendaciones, snapshot, model_version,
+            puntaje_minimo, puntaje_maximo, created_at
      FROM predictions WHERE user_id = $1
      ORDER BY created_at DESC LIMIT 1`,
     [userId],
@@ -162,7 +168,8 @@ export async function getLatestPrediction(userId) {
 export async function listPredictions(userId, limit = 10) {
   const { rows } = await pool.query(
     `SELECT id, user_id, clase, puntaje_estimado, probabilidad,
-            factores, areas, recomendaciones, snapshot, model_version, created_at
+            factores, areas, recomendaciones, snapshot, model_version,
+            puntaje_minimo, puntaje_maximo, created_at
      FROM predictions WHERE user_id = $1
      ORDER BY created_at DESC LIMIT $2`,
     [userId, limit],
@@ -194,11 +201,11 @@ export async function listCohort({ program }) {
             sp.acceso_internet, sp.acceso_pc, sp.trabaja,
             sp.genero, sp.edad, sp.ciudad,
             sp.simulacros_realizados, sp.creditos_aprobados, sp.asignaturas_aprobadas,
-            p.clase, p.puntaje_estimado, p.probabilidad, p.created_at AS prediction_at
+            p.clase, p.puntaje_estimado, p.puntaje_minimo, p.puntaje_maximo, p.probabilidad, p.created_at AS prediction_at
      FROM usuarios u
      LEFT JOIN student_profiles sp ON sp.user_id = u.id
      LEFT JOIN LATERAL (
-       SELECT clase, puntaje_estimado, probabilidad, created_at
+       SELECT clase, puntaje_estimado, puntaje_minimo, puntaje_maximo, probabilidad, created_at
        FROM predictions WHERE user_id = u.id
        ORDER BY created_at DESC LIMIT 1
      ) p ON TRUE
@@ -239,6 +246,8 @@ export async function listCohort({ program }) {
     asignaturasAprobadas: r.asignaturas_aprobadas,
     clase: r.clase,
     puntajeEstimado: r.puntaje_estimado,
+    puntajeMinimo: r.puntaje_minimo ?? null,
+    puntajeMaximo: r.puntaje_maximo ?? null,
     probabilidad: r.probabilidad ? Number(r.probabilidad) : null,
     predictionAt: r.prediction_at,
   }))
@@ -250,12 +259,18 @@ export async function listCohort({ program }) {
 // academicos y top N (mejor y peor puntaje estimado).
 // =====================================================================
 
+// Rangos del histograma de puntaje estimado.
+//
+// Escala del modelo v2: el puntaje global del Saber Pro va de 0 a 300 (tres
+// areas de 100). Los cortes siguen los umbrales de banda del modelo
+// (percentiles 30 y 70 de la cohorte: 155.0 y 184.8), de modo que el
+// histograma y los paneles de riesgo hablan el mismo lenguaje.
 const PUNTAJE_RANGES = [
-  { key: '0-100',   min: 0,   max: 100 },
-  { key: '101-150', min: 101, max: 150 },
-  { key: '151-200', min: 151, max: 200 },
-  { key: '201-250', min: 201, max: 250 },
-  { key: '251-300', min: 251, max: 300 },
+  { key: '0-120',   min: 0,   max: 120 },
+  { key: '121-155', min: 121, max: 155 },
+  { key: '156-185', min: 156, max: 185 },
+  { key: '186-220', min: 186, max: 220 },
+  { key: '221-300', min: 221, max: 300 },
 ]
 
 // Construye la clausula WHERE para cohortes segun programa.
@@ -478,9 +493,14 @@ export async function cohortMetrics({ program }) {
        COUNT(DISTINCT sp.user_id) FILTER (WHERE sp.completed)     AS con_perfil,
        COUNT(DISTINCT p.user_id)                                  AS con_prediccion,
        AVG(p.puntaje_estimado)                                    AS promedio_puntaje,
+       MIN(p.puntaje_estimado)                                    AS puntaje_minimo,
+       MAX(p.puntaje_estimado)                                    AS puntaje_maximo,
        SUM(CASE WHEN p.clase = 'alto'  THEN 1 ELSE 0 END)         AS alto,
        SUM(CASE WHEN p.clase = 'medio' THEN 1 ELSE 0 END)         AS medio,
-       SUM(CASE WHEN p.clase = 'bajo'  THEN 1 ELSE 0 END)         AS bajo
+       SUM(CASE WHEN p.clase = 'bajo'  THEN 1 ELSE 0 END)         AS bajo,
+       COUNT(DISTINCT sp.user_id) FILTER (
+         WHERE sp.completed AND COALESCE(sp.promedio_acumulado, 0) <= 0
+       )                                                          AS sin_datos
      FROM usuarios u
      LEFT JOIN student_profiles sp ON sp.user_id = u.id
      LEFT JOIN LATERAL (
@@ -497,6 +517,7 @@ export async function cohortMetrics({ program }) {
   const alto = Number(r.alto) || 0
   const medio = Number(r.medio) || 0
   const bajo = Number(r.bajo) || 0
+  const sinDatos = Number(r.sin_datos) || 0
   const pct = (n) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0)
   return {
     totalEstudiantes: total,
@@ -504,14 +525,23 @@ export async function cohortMetrics({ program }) {
     sinPerfil: Math.max(total - conPerfil, 0),
     conPrediccion,
     sinPrediccion: Math.max(conPerfil - conPrediccion, 0),
+    sinDatosSuficientes: sinDatos,
     promedioPuntaje: r.promedio_puntaje ? Math.round(Number(r.promedio_puntaje)) : null,
+    // Rango del puntaje estimado en la cohorte (modelo v2: escala real ~0-450).
+    puntajeMinimo: r.puntaje_minimo !== null ? Number(r.puntaje_minimo) : null,
+    puntajeMaximo: r.puntaje_maximo !== null ? Number(r.puntaje_maximo) : null,
+    // Desempeno proyectado (la clase que predice el modelo).
     distribucion: { alto, medio, bajo },
+    // Riesgo = inversa del desempeno: el riesgo alto es el estudiante que el
+    // modelo ubica en la clase baja (necesita intervencion). Es la misma
+    // semantica que usa la vista del estudiante (riskFromClase).
+    riesgo: { alto: bajo, medio, bajo: alto },
     porcentajes: {
       coberturaPerfil: pct(conPerfil),
       coberturaPrediccion: pct(conPrediccion),
-      riesgoAltoPct: pct(alto),
+      riesgoAltoPct: pct(bajo),
       riesgoMedioPct: pct(medio),
-      riesgoBajoPct: pct(bajo),
+      riesgoBajoPct: pct(alto),
     },
   }
 }

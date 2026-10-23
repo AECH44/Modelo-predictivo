@@ -26,6 +26,21 @@ function num(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback
 }
 
+// Un estudiante de primer semestre todavia no tiene notas: TODAS sus features
+// academicas llegan en 0 (promedio_acumulado, promedio_ingenieria,
+// promedio_basicas, creditos, porcentaje de avance). El modelo nunca vio ese
+// regimen porque esas filas se excluyeron del entrenamiento (promedio_acumulado
+// = 0), asi que predecir una clase ahi es extrapolar: la decision la toman
+// genero, edad y estrato, no el desempeno.
+//
+// Por eso, cuando no hay historial academico NO emitimos prediccion: es mas
+// honesto mostrar "sin datos suficientes" que una clase con 90% de confianza
+// inventada. Un `promedio_acumulado > 0` es la señal de que ya hay notas.
+export function tieneDatosSuficientes(profile) {
+  if (!profile) return false
+  return num(profile.promedio_acumulado, 0) > 0
+}
+
 async function checkFastApi() {
   const now = Date.now()
   if (_fastApiAlive !== null && now - _lastHealthCheck < HEALTH_CACHE_TTL_MS) {
@@ -51,12 +66,18 @@ async function checkFastApi() {
 }
 
 // Mapea el profile que la UI envia al JSON que el .pkl espera.
-// El .pkl fue entrenado con: 11 numericas + 2 categoricas (ver
-// ml/train_from_real.py). La UI actualmente envia campos del modelo
-// heuristico anterior; aqui hacemos el mapeo explicito.
+//
+// Modelo v2 (`saberpro-v2`): 12 numericas + 2 categoricas (ver
+// ml-training/train_saberpro_v2.py). Incluye `promedio_acumulado`, que en el
+// modelo v1 quedaba fuera porque el target era una funcion deterministica de
+// el (fuga). Con el target real es la feature mas informativa.
+//
+// La UI envia campos del modelo heuristico anterior; aqui hacemos el mapeo
+// explicito.
 function profileToMlFeatures(profile) {
   const fallbackPromedio = num(profile.promedio_acumulado, 3.0)
   return {
+    promedio_acumulado: clamp(fallbackPromedio, 0, 5),
     promedio_materias_basicas: num(profile.promedio_basicas, fallbackPromedio),
     promedio_ingenieria: num(profile.promedio_ingenieria, fallbackPromedio),
     promedio_programacion: num(profile.promedio_programacion, num(profile.promedio_ingenieria, fallbackPromedio)),
@@ -95,6 +116,14 @@ async function callMlPredict(profile) {
 }
 
 // Traduce la respuesta de FastAPI al contrato del predictor JS.
+//
+// Modelo v2 (`saberpro-v2`): el servicio devuelve un PUNTAJE estimado real
+// (salida de un regresor entrenado sobre el puntaje de examen observado) con
+// su intervalo, el puntaje por area y la probabilidad de cada banda.
+//
+// Modelo v1 (`real-data-v1`): el servicio devuelve una clase y probabilidades.
+// En ese caso el puntaje es un remapeo de la probabilidad (ver
+// `probabilidadToScore`), porque el modelo v1 no predice puntajes.
 function mlResponseToContract(mlResp, profile) {
   // La columna `clase` en `predictions` tiene CHECK constraint que solo
   // acepta valores lowercase: 'bajo' | 'medio' | 'alto'. Normalizamos
@@ -105,7 +134,15 @@ function mlResponseToContract(mlResp, profile) {
   const probabilidad = Number(mlResp.probabilidad) || 0.5
   const probs = mlResp.probabilities || {}
 
+  // ¿Viene el puntaje real del modelo v2?
+  const tienePuntajeReal =
+    mlResp.puntaje_estimado !== undefined &&
+    mlResp.puntaje_estimado !== null &&
+    Number.isFinite(Number(mlResp.puntaje_estimado))
+
   const factores = [
+    { label: 'Promedio acumulado', impact: tone(num(profile.promedio_acumulado, 3), 4.0, 3.0),
+      value: num(profile.promedio_acumulado, 3).toFixed(2) },
     { label: 'Promedio ingenieria', impact: tone(num(profile.promedio_ingenieria, 3), 4.0, 3.0),
       value: num(profile.promedio_ingenieria, 3).toFixed(2) },
     { label: 'Promedio basicas', impact: tone(num(profile.promedio_basicas, 3), 4.0, 3.0),
@@ -120,16 +157,25 @@ function mlResponseToContract(mlResp, profile) {
       value: profile.nivel_ingles || 'B1' },
   ]
 
-  const areas = [
-    { id: 'matematicas', label: 'Matematicas / Razonamiento cuantitativo',
-      score: Math.round(clamp(num(profile.promedio_basicas, 3) * 18 + 10, 0, 100)) },
-    { id: 'lectura', label: 'Lectura critica',
-      score: Math.round(clamp(((num(profile.promedio_basicas, 3) + num(profile.promedio_ingenieria, 3)) / 2) * 16 + 12, 0, 100)) },
-    { id: 'ingles', label: 'Ingles',
-      score: Math.round(clamp(40 + (ENGLISH_BONUS[profile.nivel_ingles] || 12) * 2, 0, 100)) },
-    { id: 'competencias', label: 'Competencias ciudadanas',
-      score: Math.round(clamp(num(profile.promedio_ingenieria, 3) * 17 + 15, 0, 100)) },
-  ]
+  // Las areas las predice el modelo v2 (0-100 cada una). Con el v1 se
+  // estiman a partir de los promedios, que es lo mejor que se puede hacer.
+  const areasDelModelo = Array.isArray(mlResp.areas) ? mlResp.areas : null
+  const areas = areasDelModelo && areasDelModelo.length
+    ? areasDelModelo.map((a) => ({
+        id: a.id,
+        label: a.label,
+        score: Math.round(clamp(Number(a.score) || 0, 0, 100)),
+      }))
+    : [
+        { id: 'matematicas', label: 'Matematicas / Razonamiento cuantitativo',
+          score: Math.round(clamp(num(profile.promedio_basicas, 3) * 18 + 10, 0, 100)) },
+        { id: 'lectura', label: 'Lectura critica',
+          score: Math.round(clamp(((num(profile.promedio_basicas, 3) + num(profile.promedio_ingenieria, 3)) / 2) * 16 + 12, 0, 100)) },
+        { id: 'ingles', label: 'Ingles',
+          score: Math.round(clamp(40 + (ENGLISH_BONUS[profile.nivel_ingles] || 12) * 2, 0, 100)) },
+        { id: 'competencias', label: 'Competencias ciudadanas',
+          score: Math.round(clamp(num(profile.promedio_ingenieria, 3) * 17 + 15, 0, 100)) },
+      ]
 
   const recomendaciones = buildRecomendaciones({
     clase,
@@ -142,9 +188,21 @@ function mlResponseToContract(mlResp, profile) {
     nivel_ingles: profile.nivel_ingles,
   })
 
+  const puntajeEstimado = tienePuntajeReal
+    ? Math.round(Number(mlResp.puntaje_estimado))
+    : probabilidadToScore(probabilidad, clase)
+
   return {
     clase,
-    puntaje_estimado: probabilidadToScore(probabilidad, clase),
+    puntaje_estimado: puntajeEstimado,
+    // Intervalo de prediccion del modelo v2 (margen empirico del MAE).
+    // Con el v1 no hay intervalo: null.
+    puntaje_minimo: tienePuntajeReal && Number.isFinite(Number(mlResp.puntaje_minimo))
+      ? Math.round(Number(mlResp.puntaje_minimo))
+      : null,
+    puntaje_maximo: tienePuntajeReal && Number.isFinite(Number(mlResp.puntaje_maximo))
+      ? Math.round(Number(mlResp.puntaje_maximo))
+      : null,
     probabilidad: Number(probabilidad.toFixed(4)),
     factores,
     areas,
@@ -160,6 +218,9 @@ function mlResponseToContract(mlResp, profile) {
   }
 }
 
+// Solo para el modelo v1 (clasificador de banda): mapea la probabilidad a un
+// puntaje 0-300. El modelo v2 NO usa esta funcion: su puntaje es la salida
+// real del regresor.
 function probabilidadToScore(p, clase) {
   // Mapea probabilidad (0-1) a puntaje 0-300 manteniendo la clase coherente.
   if (clase === 'alto') return Math.round(240 + Math.min(60, p * 60))
@@ -295,7 +356,13 @@ export function heuristicPredict(profile) {
 }
 
 // API publica. Intenta ML; si falla, fallback al heuristico.
+//
+// Devuelve `null` cuando el estudiante todavia no tiene historial academico
+// (ver `tieneDatosSuficientes`): en ese caso el modelo no tiene nada que
+// aprender del estudiante y cualquier clase seria inventada. Los llamadores
+// deben tratar `null` como "sin prediccion todavia" y no guardar fila.
 export async function computePrediction(profile) {
+  if (!tieneDatosSuficientes(profile)) return null
   if (await checkFastApi()) {
     try {
       const mlResp = await callMlPredict(profile)
@@ -305,6 +372,15 @@ export async function computePrediction(profile) {
       // Forzar re-check en la proxima llamada
       _fastApiAlive = null
     }
+  } else {
+    // Cayo al heuristico: el puntaje que sale NO es una prediccion del
+    // modelo (es un remapeo heuristico en otra escala). Hay que dejarlo
+    // registrado: si se guarda en la BD sin aviso, el panel muestra
+    // numeros que no vienen del modelo sin que nadie se entere.
+    console.warn(
+      '[predictor] FastAPI no disponible (health check fallo): se usa el fallback ' +
+      'heuristico. El puntaje NO proviene del modelo v2.',
+    )
   }
   return heuristicPredict(profile)
 }

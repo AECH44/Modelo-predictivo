@@ -132,6 +132,7 @@ services:
       DB_NAME: saberpro
       DB_USER: postgres
       DB_PASSWORD: modelopredictivo
+      MODEL_PATH_V2: ml-training/trained_models/saberpro_model_v2.pkl
       MODEL_PATH: ml-training/trained_models/saberpro_model.pkl
       PYTHONUNBUFFERED: "1"
     volumes:

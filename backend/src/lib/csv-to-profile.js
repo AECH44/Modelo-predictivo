@@ -37,8 +37,50 @@ const CONDICION_KEYS = ['CONDICION_LABORAL', 'CONDICION_LABORAL (¿Trabaja?)']
 
 const NAME_RE =
   /^[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?(?:[ '-][A-Za-zÁÉÍÓÚÜáéíóúüÑñ]+\.?)*$/
-const DOCUMENTO_RE = /^\d{5,15}$/
+// Documento: la cendecilla es numerica, pero hay estudiantes con pasaporte
+// (ej: "PA1296057"). La columna `usuarios.documento` es VARCHAR(20) con
+// indice unico, asi que admite ambos formatos. El login acepta correo o
+// documento, de modo que estos estudiantes pueden entrar con su correo.
+const DOCUMENTO_RE = /^[A-Za-z0-9]{5,20}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+// Normaliza un nombre del CSV: colapsa espacios repetidos.
+// El export de la universidad trae nombres como
+// "OCAMPO  QUIROGA  JUAN  SEBASTIAN" (doble espacio), que el regex de
+// nombres rechaza y dejaba a 9 estudiantes fuera del sistema.
+export function normalizarNombre(nombres) {
+  return (nombres || '')
+    .toString()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Repara un correo con el dominio truncado.
+// El export trae correos como "victormanuelrochamorante@gmail" o
+// "GUARINPAREDESJESUSMARIO@GMAIL." (cortados en el dominio).
+//
+// SOLO se completa cuando el dominio truncado es un prefijo recognizable de
+// un proveedor conocido (gmail, hotmail, outlook, yahoo...). No se inventa
+// ningun dominio: "algo@GMA" se completa a gmail.com porque "gma" es prefijo
+// de "gmail", pero "algo@EMPRESA" se deja como esta (fallara la validacion
+// y se reportara, en vez de crear un correo falso).
+// Devuelve { correo, reparado }.
+const PROVEEDORES_EMAIL = ['gmail', 'hotmail', 'outlook', 'yahoo', 'icloud', 'live']
+
+export function normalizarCorreo(correo) {
+  const original = (correo || '').toString().trim()
+  if (!original) return { correo: original, reparado: false }
+  const arroba = original.lastIndexOf('@')
+  if (arroba < 0) return { correo: original, reparado: false }
+  const local = original.slice(0, arroba)
+  const dominio = original.slice(arroba + 1).replace(/\.+$/, '').toLowerCase()
+  if (!dominio) return { correo: original, reparado: false }
+  if (dominio.includes('.')) return { correo: original, reparado: false }
+  if (dominio.length < 3) return { correo: original, reparado: false }
+  const proveedor = PROVEEDORES_EMAIL.find((p) => p.startsWith(dominio))
+  if (!proveedor) return { correo: original, reparado: false }
+  return { correo: `${local}@${proveedor}.com`, reparado: true }
+}
 
 function toInt(raw, lo, hi) {
   if (raw === null || raw === undefined || raw === '') return null
@@ -186,8 +228,12 @@ export function validateRow(parsed) {
   if (!parsed) return { ok: false, reason: 'parse_null' }
 
   const identificacion = parsed._identificacion
-  const correo = parsed._correo
-  const nombres = parsed._nombres
+  // Normalizaciones: nombres con espacios repetidos y correos con el dominio
+  // truncado. Sin esto, 13 estudiantes reales del roster quedaban fuera.
+  const { correo: correoAjustado, reparado } = normalizarCorreo(parsed._correo)
+  const nombresAjustados = normalizarNombre(parsed._nombres)
+  const correo = correoAjustado
+  const nombres = nombresAjustados
 
   if (!identificacion) {
     return { ok: false, reason: 'identificacion_vacia' }
@@ -216,6 +262,7 @@ export function validateRow(parsed) {
       _identificacion: identificacion.trim(),
       _correo: correoNorm,
       _nombres: nombres,
+      _reparaciones: reparado ? ['correo'] : [],
     },
   }
 }
@@ -228,6 +275,7 @@ export function splitMetadata(parsed) {
     _correo,
     _nombres,
     _carnet,
+    _reparaciones,
     ...profileFields
   } = parsed
   return {
@@ -237,4 +285,80 @@ export function splitMetadata(parsed) {
     carnet: _carnet,
     profileFields,
   }
+}
+// =====================================================================
+// DEDUPLICACION DEL ROSTER
+// =====================================================================
+//
+// El export de la universidad trae a algunos estudiantes MAS DE UNA VEZ:
+// una fila por cada corte de su carrera. Ejemplo real:
+//
+//   ESPEJO RODRIGUEZ JOHN STIVEN | sem 1  | prom_acum 0.00 | avance 0.00%
+//   ESPEJO RODRIGUEZ JOHN STIVEN | sem 10 | prom_acum 4.10 | avance 91.18%
+//
+// Si se procesan las dos, el mismo estudiante queda con la fila de primer
+// semestre (sin notas) y por lo tanto SIN prediccion, cuando en realidad
+// tiene 10 semestres de informacion. En el dataset de entrenamiento tambien
+// cuenta como dos personas y se pierde el dato bueno.
+//
+// Aqui se conserva UNA fila por estudiante, con esta prioridad:
+//
+//   1. la que tiene datos academicos (PROMEDIO_ACUMULADO > 0);
+//   2. a igualdad de datos, la de SEMESTRE mas alto (estado mas avanzado).
+//
+// Funcion pura: no toca la BD ni la red.
+// =====================================================================
+export function selectBestRowsPerStudent(rows) {
+  const numero = (v) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  const clave = (v) => (v || '').toString().trim().toUpperCase()
+
+  const porDocumento = new Map()
+  const sinDocumento = []
+  rows.forEach((r, indice) => {
+    const doc = clave(r.IDENTIFICACION)
+    if (!doc) {
+      // Sin documento no se puede deduplicar: se pasa tal cual.
+      sinDocumento.push({ fila: r, indice })
+      return
+    }
+    if (!porDocumento.has(doc)) porDocumento.set(doc, [])
+    porDocumento.get(doc).push({ fila: r, indice })
+  })
+
+  const seleccionados = []
+  const resueltos = []
+
+  for (const [doc, grupo] of porDocumento) {
+    if (grupo.length === 1) {
+      seleccionados.push({ fila: grupo[0].fila, indice: grupo[0].indice })
+      continue
+    }
+    const mejor = grupo.reduce((a, b) => {
+      const datosA = numero(a.fila.PROMEDIO_ACUMULADO) > 0
+      const datosB = numero(b.fila.PROMEDIO_ACUMULADO) > 0
+      if (datosA !== datosB) return datosA ? a : b
+      return numero(b.fila.SEMESTRE_ACTUAL) > numero(a.fila.SEMESTRE_ACTUAL) ? b : a
+    })
+    seleccionados.push({ fila: mejor.fila, indice: mejor.indice })
+    resueltos.push({
+      documento: doc,
+      nombres: mejor.fila.NOMBRES || '',
+      filas: grupo.length,
+      semestreElegido: numero(mejor.fila.SEMESTRE_ACTUAL),
+      promedioElegido: numero(mejor.fila.PROMEDIO_ACUMULADO),
+      descartadas: grupo
+        .filter((g) => g !== mejor)
+        .map((g) => ({
+          semestre: numero(g.fila.SEMESTRE_ACTUAL),
+          promedio: numero(g.fila.PROMEDIO_ACUMULADO),
+        })),
+    })
+  }
+
+  seleccionados.push(...sinDocumento)
+  seleccionados.sort((a, b) => a.indice - b.indice)
+  return { rows: seleccionados, resueltos }
 }

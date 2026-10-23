@@ -352,6 +352,15 @@ function Avatar({ name, size = 'md' }) {
 // Implementacion: usamos useSyncExternalStore para suscribirnos al "tiempo
 // que pasa" (setInterval) sin disparar el warning de setState sincrono en
 // useEffect (regla React 19).
+//
+// OJO: React exige que getSnapshot devuelva SIEMPRE el mismo valor mientras el
+// store no haya cambiado. Si devolvemos `exp - Date.now()` en cada llamada,
+// React lo detecta como "snapshot inestable", re-renderiza en bucle y revienta
+// con "Maximum update depth exceeded". Por eso el valor vive en un cache
+// (sessionClock) que solo se actualiza dentro del interval, justo antes de
+// notificar.
+const sessionClock = { remaining: null }
+
 function SessionBanner({ token }) {
   function decodeExp(tokenStr) {
     try {
@@ -369,14 +378,15 @@ function SessionBanner({ token }) {
       if (!token) return () => {}
       const exp = decodeExp(token)
       if (!exp) return () => {}
-      const id = setInterval(notify, 1000)
+      const tick = () => {
+        sessionClock.remaining = Math.max(0, exp - Date.now())
+        notify()
+      }
+      tick()
+      const id = setInterval(tick, 1000)
       return () => clearInterval(id)
     },
-    () => {
-      if (!token) return null
-      const exp = decodeExp(token)
-      return exp ? Math.max(0, exp - Date.now()) : null
-    },
+    () => (token ? sessionClock.remaining : null),
   )
 
   if (remainingMs == null || remainingMs > 5 * 60 * 1000) return null
@@ -435,6 +445,12 @@ function Breadcrumbs({ items }) {
 
 // ---- Activity feed (panel admin home) ----
 // Muestra las ultimas N acciones del audit_log. Reusa el endpoint existente.
+//
+// Igual que SessionBanner, el reloj va cacheado: React exige que getSnapshot
+// devuelva el mismo valor mientras el store no cambie, o entra en bucle de
+// renders y revienta con "Maximum update depth exceeded".
+const activityClock = { now: Date.now() }
+
 function RecentActivity({ limit = 5 }) {
   const [status, setStatus] = useState('loading')
   const [entries, setEntries] = useState([])
@@ -444,10 +460,13 @@ function RecentActivity({ limit = 5 }) {
   // Date.now() durante el render (regla react-hooks/purity).
   const nowTick = useSyncExternalStore(
     (notify) => {
-      const id = setInterval(notify, 30_000)
+      const id = setInterval(() => {
+        activityClock.now = Date.now()
+        notify()
+      }, 30_000)
       return () => clearInterval(id)
     },
-    () => Date.now(),
+    () => activityClock.now,
   )
 
   useEffect(() => {
@@ -1363,9 +1382,15 @@ function StudentRecommendationsCard({ recommendations }) {
   )
 }
 
+// Escala real del puntaje global del Saber Pro: tres areas de 100.
+const SABERPRO_SCORE_MAX = 300
+
 function StudentComparisonCard({ studentScore, comparison }) {
   const gap = studentScore - comparison.groupAverage
-  const maxScore = Math.max(studentScore, comparison.groupAverage)
+  // La barra se mide contra la escala real del examen (0-300), no contra el
+  // mayor de los dos valores: asi el estudiante ve donde se sitsa de verdad,
+  // y no siempre al 100% de la barra.
+  const maxScore = Math.max(SABERPRO_SCORE_MAX, studentScore, comparison.groupAverage)
 
   return (
     <article className="card student-block">
@@ -2633,22 +2658,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
                 {
                   key: 'clase',
                   label: 'Clase',
-                  render: (s) =>
-                    s.clase ? (
-                      <span
-                        className={`risk-pill ${
-                          s.clase === 'alto'
-                            ? 'bajo'
-                            : s.clase === 'bajo'
-                              ? 'alto'
-                              : 'medio'
-                        }`}
-                      >
-                        {s.clase}
-                      </span>
-                    ) : (
-                      'sin prediccion'
-                    ),
+                  render: (s) => <ClasePill clase={s.clase} />,
                 },
                 {
                   key: 'probabilidad',
@@ -2785,9 +2795,17 @@ function bucketize(students) {
     conPerfil: students.filter((s) => s.completed).length,
     conPrediccion: students.filter((s) => s.puntajeEstimado !== null).length,
     sinPerfil: students.filter((s) => !s.completed).length,
-    riesgoAlto: students.filter((s) => s.clase === 'alto').length,
+    // Sin datos suficientes: estudiantes de primer semestre, aun sin historial
+    // academico, para los que el modelo no emite prediccion.
+    sinDatosSuficientes: students.filter(
+      (s) => s.completed && s.puntajeEstimado === null,
+    ).length,
+    // Riesgo = inversa del desempeno proyectado. La clase 'alto' significa buen
+    // desempeno, asi que equivale a riesgo BAJO (misma semantica que la vista
+    // del estudiante, ver riskFromClase).
+    riesgoAlto: students.filter((s) => s.clase === 'bajo').length,
     riesgoMedio: students.filter((s) => s.clase === 'medio').length,
-    riesgoBajo: students.filter((s) => s.clase === 'bajo').length,
+    riesgoBajo: students.filter((s) => s.clase === 'alto').length,
     promedioPuntaje: avgOf(students, (s) => s.puntajeEstimado),
     promedioAsistencia: avgOf(students, (s) => s.asistencia),
     promedioInglesMap: students.reduce((acc, s) => {
@@ -2906,7 +2924,8 @@ function RectorPrioritiesList({ students, selectedProgram }) {
   const sinPerfil = inScope.filter((s) => !s.completed).length
   const conPerfil = inScope.filter((s) => s.completed).length
   const sinPrediccion = inScope.filter((s) => s.completed && s.puntajeEstimado === null).length
-  const riesgoAlto = inScope.filter((s) => s.clase === 'alto').length
+  // Riesgo alto = clase baja (el modelo lo ubica en bajo desempeno).
+  const riesgoAlto = inScope.filter((s) => s.clase === 'bajo').length
   const total = inScope.length
 
   const cards = [
@@ -2931,7 +2950,11 @@ function RectorPrioritiesList({ students, selectedProgram }) {
       text:
         sinPerfil > 0
           ? `${sinPerfil} estudiantes aun no completaron el perfil institucional. La prediccion no esta disponible hasta que lo hagan.`
-          : 'Todos los estudiantes en el ambito seleccionado ya tienen perfil completo.',
+          : sinPrediccion > 0
+            ? `Todos los estudiantes en el ambito seleccionado tienen perfil institucional. ${sinPrediccion} de ellos (${Math.round(
+                (sinPrediccion / total) * 100,
+              )}%) aun no tienen historial academico por ser de primer semestre, asi que el modelo todavia no les emite prediccion.`
+            : 'Todos los estudiantes en el ambito seleccionado ya tienen perfil completo y prediccion del modelo.',
     },
   ]
 
@@ -3274,8 +3297,8 @@ function RectorReportesSection({ selectedProgram }) {
                   <span className="value">{b.conPrediccion}</span>
                 </div>
                 <div className="cohort-metric-card">
-                  <span className="label">Sin prediccion</span>
-                  <span className="value">{b.conPerfil - b.conPrediccion}</span>
+                  <span className="label">Sin datos suficientes</span>
+                  <span className="value">{b.sinDatosSuficientes ?? (b.conPerfil - b.conPrediccion)}</span>
                 </div>
               </div>
             </article>
@@ -3311,9 +3334,7 @@ function RectorReportesSection({ selectedProgram }) {
                         {s.puntajeEstimado !== null ? Math.round(s.puntajeEstimado) : '—'}
                       </td>
                       <td>
-                        <span className={`risk-pill ${s.clase || 'bajo'}`}>
-                          {s.clase || '—'}
-                        </span>
+                        <ClasePill clase={s.clase} />
                       </td>
                       <td>{s.asistencia !== null ? `${s.asistencia}%` : '—'}</td>
                     </tr>
@@ -3511,12 +3532,7 @@ function DeanProgramasSection({ selectedProgram }) {
                   {
                     key: 'clase',
                     label: 'Clase',
-                    render: (s) =>
-                      s.clase ? (
-                        <span className={`risk-pill ${s.clase}`}>{s.clase}</span>
-                      ) : (
-                        '—'
-                      ),
+                    render: (s) => <ClasePill clase={s.clase} />,
                   },
                 ]}
               />
@@ -3718,8 +3734,8 @@ function DeanIndicadoresSection({ selectedProgram }) {
                   <span className="value">{b.conPrediccion}</span>
                 </div>
                 <div className="cohort-metric-card">
-                  <span className="label">Sin prediccion</span>
-                  <span className="value">{b.conPerfil - b.conPrediccion}</span>
+                  <span className="label">Sin datos suficientes</span>
+                  <span className="value">{b.sinDatosSuficientes ?? (b.conPerfil - b.conPrediccion)}</span>
                 </div>
               </div>
             </article>
@@ -3806,7 +3822,7 @@ function DeanTopStudentsTable({ selectedProgram }) {
             <td>{s.username}</td>
             <td className="table-score">{Math.round(s.puntajeEstimado)}</td>
             <td>
-              <span className={`risk-pill ${s.clase || 'bajo'}`}>{s.clase || '—'}</span>
+              <ClasePill clase={s.clase} />
             </td>
           </tr>
         ))}
@@ -3951,6 +3967,20 @@ function riskFromClase(clase) {
   if (clase === 'alto') return 'bajo'
   if (clase === 'bajo') return 'alto'
   return 'medio'
+}
+
+// Pill unico para la clase predicha por el modelo.
+//
+// `clase` es el DESEMPENO proyectado (alto/medio/bajo), no el riesgo. El color
+// del pill comunica el riesgo que implica: clase 'alto' (buen desempeno) es
+// riesgo bajo y se pinta verde; clase 'bajo' es riesgo alto y se pinta rojo.
+// Es la misma inversion que usa la vista del estudiante.
+//
+// Un estudiante sin historial academico (1er semestre) no tiene clase: se
+// muestra explicitamente "Sin datos suficientes" en vez de una clase inventada.
+function ClasePill({ clase }) {
+  if (!clase) return <span className="muted-text">Sin datos suficientes</span>
+  return <span className={`risk-pill ${riskFromClase(clase)}`}>{clase}</span>
 }
 
 const RISK_LABEL_FROM_CLASE = {
@@ -4372,6 +4402,37 @@ function StudentView({ user, onLogout, onUserUpdated }) {
     )
   }
 
+  // Estudiante con perfil institucional completo pero SIN historial academico
+  // todavia (lo normal en primer semestre): el modelo no emite prediccion
+  // porque no tiene nada que evaluar. Se explica en vez de mostrar una clase
+  // inventada.
+  if (state.status === 'ready' && !state.prediction) {
+    return (
+      <DashboardShell
+        user={user}
+        onLogout={onLogout}
+        onUserUpdated={onUserUpdated}
+        searchPlaceholder=""
+        customNav={['Tu prediccion']}
+      >
+        <section className="card empty-state">
+          <h2>Aun no hay datos suficientes para predecir</h2>
+          <p className="student-interpretation">
+            Tu informacion institucional esta completa, pero todavia no tienes historial
+            academico registrado (lo normal si estas en tu primer semestre). Sin
+            promedios el modelo no puede estimar tu desempeno en Saber Pro: te
+            mostraria un resultado inventado en lugar de una prediccion.
+          </p>
+          <p className="student-interpretation">
+            En cuanto se registre tu primer promedio, tu prediccion aparecera aqui
+            automaticamente. Si ya cursaste materias y sigue asi, contacta al
+            administrador de tu programa para actualizar tu informacion.
+          </p>
+        </section>
+      </DashboardShell>
+    )
+  }
+
   const profile = state.profile
   const prediction = state.prediction
   const predictions = state.predictions
@@ -4442,8 +4503,20 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                   {prediction?.puntajeEstimado ?? '—'}
                 </div>
                 <div className="student-score-meta">
-                  Puntaje estimado · clase{' '}
-                  <strong>{prediction?.clase ?? '—'}</strong> · confianza{' '}
+                  Puntaje estimado en el Saber Pro (escala 0-300)
+                  {prediction?.puntajeMinimo != null &&
+                  prediction?.puntajeMaximo != null ? (
+                    <>
+                      {' '}
+                      · rango probable{' '}
+                      <strong>
+                        {prediction.puntajeMinimo} - {prediction.puntajeMaximo}
+                      </strong>
+                    </>
+                  ) : null}
+                </div>
+                <div className="student-score-meta">
+                  Banda <strong>{prediction?.clase ?? '—'}</strong> · probabilidad{' '}
                   {prediction
                     ? `${Math.round((prediction.probabilidad || 0) * 100)}%`
                     : '—'}
@@ -4518,7 +4591,8 @@ function StudentView({ user, onLogout, onUserUpdated }) {
             <div>
               <p className="banner-kicker">Mi prediccion</p>
               <h1>
-                Clase {prediction?.clase ?? '—'} · {prediction?.puntajeEstimado ?? '—'} puntos
+                Puntaje estimado {prediction?.puntajeEstimado ?? '—'} sobre 300 · banda{' '}
+                {prediction?.clase ?? '—'}
               </h1>
               <p className="banner-text">
                 Desglose por areas del modelo, comparacion con la cohorte y
@@ -4569,9 +4643,14 @@ function StudentView({ user, onLogout, onUserUpdated }) {
               </div>
               <p className="student-interpretation">
                 {prediction
-                  ? `Tu desempeno proyectado se ubica en la clase ${prediction.clase} con un puntaje estimado de ${prediction.puntajeEstimado}. El modelo asigna una confianza del ${Math.round(
+                  ? `Tu puntaje estimado en el Saber Pro es de ${prediction.puntajeEstimado} sobre 300${
+                      prediction.puntajeMinimo != null &&
+                      prediction.puntajeMaximo != null
+                        ? `, con un rango probable de ${prediction.puntajeMinimo} a ${prediction.puntajeMaximo} puntos`
+                        : ''
+                    }. Eso lo ubica en la banda ${prediction.clase}, con una probabilidad del ${Math.round(
                       (prediction.probabilidad || 0) * 100,
-                    )}% a esta clasificacion.`
+                    )}% de caer en ella. El margen es amplio: el resultado real depende tambien de factores que no aparecen en tu historial academico, como la preparacion especifica para la prueba.`
                   : 'Aun no hay prediccion. Llena tu perfil para generar el analisis.'}
               </p>
               <div className="student-data-list">
@@ -4759,9 +4838,20 @@ function generateExecutiveAnalysis(metrics) {
   const conPrediccion = metrics.conPrediccion
   const sinPerfil = metrics.sinPerfil
   const dist = metrics.distribucion || {}
-  const alto = dist.alto || 0
-  const medio = dist.medio || 0
-  const bajo = dist.bajo || 0
+  // `distribucion` es el DESEMPENO proyectado (clase del modelo). El RIESGO es
+  // su inversa: riesgo alto = clase baja (el estudiante que necesita
+  // intervencion). El backend ya entrega los dos cubos separados en
+  // `metrics.riesgo`; usarlos evita que el panel llame "riesgo alto" a los
+  // mejores estudiantes de la cohorte.
+  const riesgo = metrics.riesgo || {
+    alto: dist.bajo || 0,
+    medio: dist.medio || 0,
+    bajo: dist.alto || 0,
+  }
+  const alto = riesgo.alto || 0
+  const medio = riesgo.medio || 0
+  const bajo = riesgo.bajo || 0
+  const sinDatos = metrics.sinDatosSuficientes || 0
   const pct = (metrics.porcentajes || {})
   const sentences = []
 
@@ -4789,8 +4879,15 @@ function generateExecutiveAnalysis(metrics) {
   } else if (conPrediccion > 0 && conPrediccion < conPerfil) {
     const faltan = conPerfil - conPrediccion
     sentences.push(
-      `${conPrediccion} estudiantes (${pct.coberturaPrediccion ?? 0}% del total, ${Math.round((conPrediccion / Math.max(conPerfil, 1)) * 100)}% de los que tienen perfil) cuentan con prediccion del modelo; faltan ${faltan} por procesar.`,
+      `${conPrediccion} estudiantes (${pct.coberturaPrediccion ?? 0}% del total, ${Math.round((conPrediccion / Math.max(conPerfil, 1)) * 100)}% de los que tienen perfil) cuentan con prediccion del modelo.`,
     )
+    if (sinDatos > 0) {
+      sentences.push(
+        `Los ${sinDatos} estudiantes restantes (${Math.round((sinDatos / Math.max(total, 1)) * 100)}% de la cohorte) todavia no tienen historial academico: son estudiantes de primer semestre que aun no han acumulado notas, asi que el modelo no emite prediccion para ellos hasta que tengan un promedio registrado.`,
+      )
+    } else if (faltan > 0) {
+      sentences.push(`Faltan ${faltan} por procesar.`)
+    }
   } else if (conPrediccion === conPerfil && conPerfil > 0) {
     sentences.push(
       'Todos los estudiantes con perfil cuentan con una prediccion del modelo actualizada.',
@@ -4853,7 +4950,18 @@ function AdminComparativoSection() {
 
   const metrics = sis.metrics
   const dist = metrics?.distribucion || { alto: 0, medio: 0, bajo: 0 }
+  // Riesgo = inversa del desempeno. `distribucion` son las clases que predice
+  // el modelo; `riesgo` es el cubo de riesgo (alto = clase baja).
+  const rsk = metrics?.riesgo || {
+    alto: dist.bajo || 0,
+    medio: dist.medio || 0,
+    bajo: dist.alto || 0,
+  }
   const total = metrics?.totalEstudiantes || 0
+  // Denominador de la barra: solo los estudiantes con prediccion. Los que
+  // aun no tienen historial academico no se evaluan y no deben aparecer como
+  // "riesgo bajo" (serian una bolsa de riesgo ficticia).
+  const evaluados = rsk.alto + rsk.medio + rsk.bajo
   const topRisk = (sis.students || [])
     .filter((s) => s.clase)
     .slice()
@@ -4908,11 +5016,17 @@ function AdminComparativoSection() {
             </article>
             <article className="kpi-card rose">
               <div className="kpi-icon"><Icon name="warning" size={22} /></div>
-              <p className="kpi-value">{dist.alto}</p>
+              <p className="kpi-value">{rsk.alto}</p>
               <p className="kpi-label">En riesgo alto</p>
               <p className="kpi-detail">
                 {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}% del total
               </p>
+            </article>
+            <article className="kpi-card amber">
+              <div className="kpi-icon"><Icon name="info" size={22} /></div>
+              <p className="kpi-value">{metrics.sinDatosSuficientes || 0}</p>
+              <p className="kpi-label">Sin datos suficientes</p>
+              <p className="kpi-detail">Sin historial academico</p>
             </article>
           </section>
 
@@ -4920,10 +5034,10 @@ function AdminComparativoSection() {
           <article className="card">
             <div className="section-header">
               <h2>Distribucion de riesgo</h2>
-              <span className="live-chip">{dist.alto + dist.medio + dist.bajo} evaluados</span>
+              <span className="live-chip">{rsk.alto + rsk.medio + rsk.bajo} evaluados</span>
             </div>
 
-            {dist.alto + dist.medio + dist.bajo === 0 ? (
+            {rsk.alto + rsk.medio + rsk.bajo === 0 ? (
               <div className="data-table-empty">
                 <p>Aun no hay predicciones para esta cohorte.</p>
                 <p className="student-interpretation" style={{ marginTop: '0.5rem' }}>
@@ -4936,31 +5050,31 @@ function AdminComparativoSection() {
                 <div className="risk-distribution-bar" aria-label="Distribucion de riesgo">
                   <div
                     className="risk-segment bajo"
-                    style={{ width: `${((dist.bajo || 0) / Math.max(total, 1)) * 100}%` }}
+                    style={{ width: `${((rsk.bajo || 0) / Math.max(evaluados, 1)) * 100}%` }}
                   >
-                    {(dist.bajo || 0) > 0 ? (
+                    {(rsk.bajo || 0) > 0 ? (
                       <span className="risk-segment-label">
-                        {((dist.bajo || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                        {((rsk.bajo || 0) / Math.max(evaluados, 1) * 100).toFixed(0)}%
                       </span>
                     ) : null}
                   </div>
                   <div
                     className="risk-segment medio"
-                    style={{ width: `${((dist.medio || 0) / Math.max(total, 1)) * 100}%` }}
+                    style={{ width: `${((rsk.medio || 0) / Math.max(evaluados, 1)) * 100}%` }}
                   >
-                    {(dist.medio || 0) > 0 ? (
+                    {(rsk.medio || 0) > 0 ? (
                       <span className="risk-segment-label">
-                        {((dist.medio || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                        {((rsk.medio || 0) / Math.max(evaluados, 1) * 100).toFixed(0)}%
                       </span>
                     ) : null}
                   </div>
                   <div
                     className="risk-segment alto"
-                    style={{ width: `${((dist.alto || 0) / Math.max(total, 1)) * 100}%` }}
+                    style={{ width: `${((rsk.alto || 0) / Math.max(evaluados, 1)) * 100}%` }}
                   >
-                    {(dist.alto || 0) > 0 ? (
+                    {(rsk.alto || 0) > 0 ? (
                       <span className="risk-segment-label">
-                        {((dist.alto || 0) / Math.max(total, 1) * 100).toFixed(0)}%
+                        {((rsk.alto || 0) / Math.max(evaluados, 1) * 100).toFixed(0)}%
                       </span>
                     ) : null}
                   </div>
@@ -4971,7 +5085,7 @@ function AdminComparativoSection() {
                     <span className="risk-dot bajo" aria-hidden="true" />
                     <span className="risk-legend-label">Riesgo bajo</span>
                     <span className="risk-legend-value">
-                      <strong>{dist.bajo || 0}</strong>
+                      <strong>{rsk.bajo || 0}</strong>
                       <span className="risk-legend-pct">
                         {(metrics.porcentajes?.riesgoBajoPct ?? 0).toFixed(1)}%
                       </span>
@@ -4981,7 +5095,7 @@ function AdminComparativoSection() {
                     <span className="risk-dot medio" aria-hidden="true" />
                     <span className="risk-legend-label">Riesgo medio</span>
                     <span className="risk-legend-value">
-                      <strong>{dist.medio || 0}</strong>
+                      <strong>{rsk.medio || 0}</strong>
                       <span className="risk-legend-pct">
                         {(metrics.porcentajes?.riesgoMedioPct ?? 0).toFixed(1)}%
                       </span>
@@ -4991,7 +5105,7 @@ function AdminComparativoSection() {
                     <span className="risk-dot alto" aria-hidden="true" />
                     <span className="risk-legend-label">Riesgo alto</span>
                     <span className="risk-legend-value">
-                      <strong>{dist.alto || 0}</strong>
+                      <strong>{rsk.alto || 0}</strong>
                       <span className="risk-legend-pct">
                         {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}%
                       </span>
@@ -5056,17 +5170,17 @@ function AdminComparativoSection() {
                   </td>
                 </tr>
                 <tr>
-                  <td>Sin prediccion (con perfil)</td>
-                  <td className="table-code">{metrics.sinPrediccion}</td>
+                  <td>Sin datos suficientes (1er semestre)</td>
+                  <td className="table-code">{metrics.sinDatosSuficientes || 0}</td>
                   <td className="table-code">
-                    {total > 0 ? ((metrics.sinPrediccion / total) * 100).toFixed(1) : '0.0'}%
+                    {total > 0 ? (((metrics.sinDatosSuficientes || 0) / total) * 100).toFixed(1) : '0.0'}%
                   </td>
                 </tr>
                 <tr>
                   <td>
                     <span className="risk-dot bajo" aria-hidden="true" /> Riesgo bajo
                   </td>
-                  <td className="table-code">{dist.bajo || 0}</td>
+                  <td className="table-code">{rsk.bajo || 0}</td>
                   <td className="table-code">
                     {(metrics.porcentajes?.riesgoBajoPct ?? 0).toFixed(1)}%
                   </td>
@@ -5075,7 +5189,7 @@ function AdminComparativoSection() {
                   <td>
                     <span className="risk-dot medio" aria-hidden="true" /> Riesgo medio
                   </td>
-                  <td className="table-code">{dist.medio || 0}</td>
+                  <td className="table-code">{rsk.medio || 0}</td>
                   <td className="table-code">
                     {(metrics.porcentajes?.riesgoMedioPct ?? 0).toFixed(1)}%
                   </td>
@@ -5084,7 +5198,7 @@ function AdminComparativoSection() {
                   <td>
                     <span className="risk-dot alto" aria-hidden="true" /> Riesgo alto
                   </td>
-                  <td className="table-code">{dist.alto || 0}</td>
+                  <td className="table-code">{rsk.alto || 0}</td>
                   <td className="table-code">
                     {(metrics.porcentajes?.riesgoAltoPct ?? 0).toFixed(1)}%
                   </td>
@@ -5139,7 +5253,7 @@ function AdminComparativoSection() {
                           : '—'}
                       </td>
                       <td>
-                        <span className={`risk-pill ${s.clase || 'bajo'}`}>{s.clase || 'bajo'}</span>
+                        <ClasePill clase={s.clase} />
                       </td>
                     </tr>
                   ))}

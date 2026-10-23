@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { parseCsvRow, validateRow, splitMetadata } from '../src/lib/csv-to-profile.js'
+import {
+  parseCsvRow,
+  validateRow,
+  splitMetadata,
+  selectBestRowsPerStudent,
+  normalizarNombre,
+  normalizarCorreo,
+} from '../src/lib/csv-to-profile.js'
 
 describe('parseCsvRow', () => {
   it('mapea campos basicos del CSV al perfil', () => {
@@ -198,5 +205,166 @@ describe('splitMetadata', () => {
     // No debe haber leak de metadata en profileFields.
     expect(profileFields._identificacion).toBeUndefined()
     expect(profileFields._correo).toBeUndefined()
+  })
+})
+// ===========================================================================
+// DEDUPLICACION DEL ROSTER
+// ===========================================================================
+//
+// El export de la universidad trae a algunos estudiantes mas de una vez (una
+// fila por corte de su carrera). Si se procesan todas, el mismo estudiante
+// queda con la fila de primer semestre (sin notas) y sin prediccion.
+//
+// Regla: se conserva la fila que TIENE DATOS academicos y, a igualdad de
+// datos, la de SEMESTRE mas alto.
+describe('selectBestRowsPerStudent', () => {
+  const fila = (doc, sem, prom, extra = {}) => ({
+    IDENTIFICACION: doc,
+    NOMBRES: `ESTUDIANTE ${doc}`,
+    SEMESTRE_ACTUAL: String(sem),
+    PROMEDIO_ACUMULADO: String(prom),
+    ...extra,
+  })
+
+  it('conserva la fila con datos cuando la primera no los tiene', () => {
+    // Caso real: ESPEJO RODRIGUEZ JOHN STIVEN
+    const { rows, resueltos } = selectBestRowsPerStudent([
+      fila('1005329441', 1, 0),
+      fila('1005329441', 10, 4.1),
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].fila.SEMESTRE_ACTUAL).toBe('10')
+    expect(rows[0].fila.PROMEDIO_ACUMULADO).toBe('4.1')
+    expect(resueltos).toHaveLength(1)
+    expect(resueltos[0].documento).toBe('1005329441')
+    expect(resueltos[0].semestreElegido).toBe(10)
+  })
+
+  it('a igualdad de datos elige el semestre mas alto', () => {
+    const { rows } = selectBestRowsPerStudent([
+      fila('1001014318', 2, 4.0),
+      fila('1001014318', 10, 4.3),
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].fila.SEMESTRE_ACTUAL).toBe('10')
+  })
+
+  it('prioriza los datos academicos sobre el semestre', () => {
+    // La fila de semestre 10 no tiene datos: gana la de semestre 2.
+    const { rows } = selectBestRowsPerStudent([
+      fila('1118555894', 2, 4.7),
+      fila('1118555894', 10, 0),
+    ])
+    expect(rows[0].fila.SEMESTRE_ACTUAL).toBe('2')
+  })
+
+  it('si ninguna fila tiene datos, gana el semestre mas alto', () => {
+    const { rows } = selectBestRowsPerStudent([
+      fila('1027804169', 1, 0),
+      fila('1027804169', 3, 0),
+    ])
+    expect(rows[0].fila.SEMESTRE_ACTUAL).toBe('3')
+  })
+
+  it('deja intactos a los estudiantes que aparecen una sola vez', () => {
+    const { rows, resueltos } = selectBestRowsPerStudent([
+      fila('1000000001', 5, 3.5),
+      fila('1000000002', 7, 4.0),
+    ])
+    expect(rows).toHaveLength(2)
+    expect(resueltos).toHaveLength(0)
+  })
+
+  it('conserva el orden original del CSV', () => {
+    const { rows } = selectBestRowsPerStudent([
+      fila('1000000002', 7, 4.0),
+      fila('1000000001', 5, 3.5),
+    ])
+    expect(rows.map((r) => r.fila.IDENTIFICACION)).toEqual([
+      '1000000002', '1000000001',
+    ])
+  })
+
+  it('no deduplica filas sin documento (no hay con que agrupar)', () => {
+    const { rows } = selectBestRowsPerStudent([
+      { IDENTIFICACION: '', NOMBRES: 'SIN DOC', SEMESTRE_ACTUAL: '1', PROMEDIO_ACUMULADO: '0' },
+      { IDENTIFICACION: '', NOMBRES: 'SIN DOC 2', SEMESTRE_ACTUAL: '2', PROMEDIO_ACUMULADO: '0' },
+    ])
+    expect(rows).toHaveLength(2)
+  })
+})
+
+// ===========================================================================
+// NORMALIZACIONES: nombres con espacios repetidos y correos truncados
+// ===========================================================================
+describe('normalizarNombre', () => {
+  it('colapsa espacios repetidos', () => {
+    expect(normalizarNombre('OCAMPO  QUIROGA  JUAN  SEBASTIAN'))
+      .toBe('OCAMPO QUIROGA JUAN SEBASTIAN')
+  })
+
+  it('no toca un nombre ya normalizado', () => {
+    expect(normalizarNombre('PEREZ PEREZ JUAN')).toBe('PEREZ PEREZ JUAN')
+  })
+})
+
+describe('normalizarCorreo', () => {
+  it('completa un dominio truncado de un proveedor conocido', () => {
+    expect(normalizarCorreo('victor@gmail').correo).toBe('victor@gmail.com')
+    expect(normalizarCorreo('JUAN@GMAIL.').correo).toBe('JUAN@gmail.com')
+    expect(normalizarCorreo('x@GMA').correo).toBe('x@gmail.com')
+  })
+
+  it('marca la reparacion', () => {
+    expect(normalizarCorreo('victor@gmail').reparado).toBe(true)
+  })
+
+  it('NO inventa un dominio desconocido', () => {
+    // "empresa" no es un proveedor conocido: no se inventa el TLD.
+    expect(normalizarCorreo('alguien@empresa').reparado).toBe(false)
+    expect(normalizarCorreo('alguien@empresa').correo).toBe('alguien@empresa')
+  })
+
+  it('deja intacto un correo valido', () => {
+    expect(normalizarCorreo('juan.perez@gmail.com').correo).toBe('juan.perez@gmail.com')
+    expect(normalizarCorreo('juan.perez@gmail.com').reparado).toBe(false)
+  })
+})
+
+describe('validateRow: ahora acepta lo que venia en el roster real', () => {
+  const base = {
+    NOMBRES: 'ESTUDIANTE PRUEBA',
+    IDENTIFICACION: '1099545610',
+    CORREO: 'prueba@gmail.com',
+    CARNET: '20181012345',
+    SEMESTRE_ACTUAL: '8',
+    PROMEDIO_ACUMULADO: '4.0',
+  }
+
+  it('acepta nombres con espacios repetidos', () => {
+    const v = validateRow(parseCsvRow({ ...base, NOMBRES: 'OCAMPO  QUIROGA  JUAN  SEBASTIAN' }))
+    expect(v.ok).toBe(true)
+    expect(v.data._nombres).toBe('OCAMPO QUIROGA JUAN SEBASTIAN')
+  })
+
+  it('acepta documento alfanumerico (pasaporte)', () => {
+    const v = validateRow(parseCsvRow({ ...base, IDENTIFICACION: 'PA1296057' }))
+    expect(v.ok).toBe(true)
+  })
+
+  it('acepta y repara un correo con el dominio truncado', () => {
+    const v = validateRow(parseCsvRow({ ...base, CORREO: 'prueba@gmail' }))
+    expect(v.ok).toBe(true)
+    expect(v.data._correo).toBe('prueba@gmail.com')
+  })
+
+  it('sigue rechazando un documento demasiado corto', () => {
+    const v = validateRow(parseCsvRow({ ...base, IDENTIFICACION: '123' }))
+    expect(v.ok).toBe(false)
+  })
+
+  it('sigue rechazando un correo sin arroba', () => {
+    const v = validateRow(parseCsvRow({ ...base, CORREO: 'correo-sin-arroba' }))
+    expect(v.ok).toBe(false)
   })
 })

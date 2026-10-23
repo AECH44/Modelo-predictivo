@@ -376,7 +376,8 @@ async function ensureStudentPredictionOnLogin(userId, userAgent) {
     const { profileFields } = splitMetadata(validation.data)
     const profile = await upsertProfile(userId, profileFields)
     const prediction = await computePrediction(profile)
-    const saved = await savePrediction(userId, prediction)
+    // Sin historial academico no hay prediccion que guardar (ver predictor.js).
+    const saved = prediction ? await savePrediction(userId, prediction) : null
     insertAuditLog(pool, {
       adminId: userId,
       adminEmail: user.email,
@@ -753,13 +754,18 @@ router.put('/student/profile', requireAuth, requireStudent, async (req, res) => 
 
     const profile = await upsertProfile(req.userId, req.body || {})
     const prediction = await computePrediction(profile)
-    const saved = await savePrediction(req.userId, prediction)
+    // Si el estudiante aun no tiene historial academico no hay prediccion que
+    // generar: se guarda el perfil y se informa que faltan datos.
+    const saved = prediction ? await savePrediction(req.userId, prediction) : null
 
     return res.json({
       ok: true,
-      message: 'Perfil guardado y prediccion actualizada.',
+      message: saved
+        ? 'Perfil guardado y prediccion actualizada.'
+        : 'Perfil guardado. Aun no tienes datos academicos suficientes para generar una prediccion.',
       profile,
       prediction: saved,
+      sinDatosSuficientes: !saved,
     })
   } catch (err) {
     console.error('[student/profile PUT] error:', err)
@@ -881,19 +887,36 @@ router.get('/admin/report-summary', requireAuth, requireAdmin, async (req, res) 
 // Util despues de cargas masivas (ETL desde SQL Server) o cambios en el predictor.
 router.post('/admin/recompute-predictions', requireAuth, requireAdmin, async (req, res) => {
   try {
+    // Traemos las 21 columnas de PROFILE_FIELDS para que computePrediction
+    // reciba el mismo perfil completo que recibe un estudiante individual en
+    // PUT /api/student/profile. Si faltara alguna, predictor.js caeria en sus
+    // valores por defecto y la prediccion seria distinta de la real.
     const { rows: students } = await pool.query(`
       SELECT sp.user_id, sp.promedio_acumulado, sp.promedio_basicas, sp.promedio_ingenieria,
+             sp.promedio_programacion, sp.promedio_matematica_estadistica,
              sp.num_reprobadas, sp.pct_creditos, sp.semestre, sp.estrato,
              sp.acceso_internet, sp.acceso_pc, sp.trabaja, sp.genero, sp.edad, sp.ciudad,
              sp.horas_estudio_semana, sp.nivel_ingles, sp.simulacros_realizados,
-             sp.asistencia_pct
+             sp.asistencia_pct, sp.creditos_aprobados, sp.asignaturas_aprobadas
       FROM student_profiles sp
       WHERE sp.completed = true
     `)
-    let ok = 0, err = 0
+    let ok = 0, err = 0, sinDatos = 0, heuristicas = 0
     for (const r of students) {
       try {
         const prediction = await computePrediction(r)
+        if (!prediction) {
+          // Sin historial academico no hay prediccion. Ademas borramos cualquier
+          // prediccion previa para que no quede una clase vieja con confianza
+          // inventada.
+          await pool.query('DELETE FROM predictions WHERE user_id = $1', [r.user_id])
+          sinDatos++
+          continue
+        }
+        // Si el servicio ML no estaba disponible, el predictor devuelve el
+        // fallback heuristico: ese puntaje NO viene del modelo y no debe
+        // mezclarse con las predicciones reales sin que quede registrado.
+        if (prediction.model_version === 'heuristic-v1') heuristicas++
         await savePrediction(r.user_id, prediction)
         ok++
       } catch (e) {
@@ -901,16 +924,25 @@ router.post('/admin/recompute-predictions', requireAuth, requireAdmin, async (re
         console.error(`[recompute] user_id=${r.user_id} err:`, e.message)
       }
     }
-    insertAuditLog({
+    insertAuditLog(pool, {
       adminId: req.userId,
       adminEmail: req.adminUser.email,
       accion: 'update_user',
       targetId: null,
       targetDocumento: null,
-      detalles: { accion: 'recompute_predictions', total: students.length, ok, err },
+      detalles: { accion: 'recompute_predictions', total: students.length, ok, err, sinDatos, heuristicas },
       userAgent: req.headers['user-agent'],
     }).catch(() => {})
-    return res.json({ ok: true, total: students.length, generated: ok, errors: err })
+    return res.json({
+      ok: true,
+      total: students.length,
+      generated: ok,
+      errors: err,
+      sinDatosSuficientes: sinDatos,
+      // > 0 significa que el servicio ML no respondio y esas predicciones son
+      // heuristicas, no del modelo.
+      heuristicas,
+    })
   } catch (err) {
     console.error('[admin/recompute] error:', err)
     return res.status(500).json({ ok: false, message: 'Error regenerando predicciones.' })

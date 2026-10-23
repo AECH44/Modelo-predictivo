@@ -292,11 +292,78 @@ ON CONFLICT (fila_csv) DO UPDATE SET
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
+def dedupe_roster(raw_rows):
+    """
+    Conserva UNA fila por estudiante: la que tiene datos academicos y, a
+    igualdad de datos, la de SEMESTRE mas alto.
+
+    El export de la universidad trae a algunos estudiantes mas de una vez (una
+    fila por corte de su carrera). Ejemplo real:
+
+        ESPEJO RODRIGUEZ JOHN STIVEN | sem 1  | prom_acum 0.00
+        ESPEJO RODRIGUEZ JOHN STIVEN | sem 10 | prom_acum 4.10
+
+    Sin esto, el dataset de entrenamiento arrastra la fila de primer semestre
+    (sin notas) de algunos estudiantes y se pierden los que si tienen
+    historial: ademas el mismo estudiante aparece dos veces como dos personas.
+
+    Devuelve (filas_elegidas, detalle_de_duplicados).
+    """
+    def numero(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    por_documento = {}
+    sin_documento = []
+    for i, raw in raw_rows:
+        doc = (raw.get("IDENTIFICACION") or "").strip().upper()
+        if not doc:
+            sin_documento.append((i, raw))
+            continue
+        por_documento.setdefault(doc, []).append((i, raw))
+
+    elegidos = []
+    detalle = []
+    for doc, grupo in por_documento.items():
+        if len(grupo) == 1:
+            elegidos.append(grupo[0])
+            continue
+        mejor = max(
+            grupo,
+            key=lambda ir: (
+                numero(ir[1].get("PROMEDIO_ACUMULADO")) > 0,
+                numero(ir[1].get("SEMESTRE_ACTUAL")),
+            ),
+        )
+        elegidos.append(mejor)
+        detalle.append({
+            "documento": doc,
+            "nombres": mejor[1].get("NOMBRES", ""),
+            "filas": len(grupo),
+            "semestre_elegido": numero(mejor[1].get("SEMESTRE_ACTUAL")),
+            "promedio_elegido": numero(mejor[1].get("PROMEDIO_ACUMULADO")),
+            "descartadas": [
+                (numero(g[1].get("SEMESTRE_ACTUAL")), numero(g[1].get("PROMEDIO_ACUMULADO")))
+                for g in grupo if g is not mejor
+            ],
+        })
+
+    elegidos.extend(sin_documento)
+    elegidos.sort(key=lambda ir: ir[0])
+    return elegidos, detalle
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", default=str(CSV_DEFAULT))
     parser.add_argument("--limit", type=int, default=0, help="Procesar solo N filas (0=todas)")
     parser.add_argument("--dry-run", action="store_true", help="Solo transformar, no escribir")
+    parser.add_argument(
+        "--append", action="store_true",
+        help="No vaciar la tabla antes de cargar (por defecto la carga la reemplaza)",
+    )
     args = parser.parse_args()
 
     csv_path = Path(args.csv)
@@ -324,16 +391,31 @@ def main():
     skipped = 0
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for i, raw in enumerate(reader, start=1):
-            try:
-                rows.append(transform_row(i, raw))
-            except Exception as exc:
-                skipped += 1
-                print(f"[warn] Fila {i} no se pudo transformar: {exc}", file=sys.stderr)
-            if args.limit and len(rows) >= args.limit:
-                break
+        crudas = [(i, raw) for i, raw in enumerate(reader, start=1)]
 
-    print(f"[info] Filas transformadas: {len(rows)} (omitidas: {skipped})")
+    # Deduplicacion: un mismo estudiante puede venir en varias filas (una por
+    # corte de su carrera). Se conserva la que tiene datos academicos y, a
+    # igualdad de datos, la de semestre mas alto.
+    elegidas, duplicados = dedupe_roster(crudas)
+    if duplicados:
+        print(f"[info] {len(duplicados)} estudiantes venían repetidos "
+              f"(se conserva la fila con datos y semestre más alto):")
+        for d in duplicados:
+            print(f"    {d['documento']} {d['nombres']}: {d['filas']} filas -> "
+                  f"sem {d['semestre_elegido']} (prom {d['promedio_elegido']}); "
+                  f"descartadas {d['descartadas']}")
+
+    for i, raw in elegidas:
+        try:
+            rows.append(transform_row(i, raw))
+        except Exception as exc:
+            skipped += 1
+            print(f"[warn] Fila {i} no se pudo transformar: {exc}", file=sys.stderr)
+        if args.limit and len(rows) >= args.limit:
+            break
+
+    print(f"[info] Filas transformadas: {len(rows)} (omitidas: {skipped}, "
+          f"duplicados consolidados: {len(crudas) - len(elegidas)})")
 
     if args.dry_run:
         print("[dry-run] No se escribio nada en la BD.")
@@ -345,6 +427,15 @@ def main():
     conn.autocommit = False
     try:
         with conn.cursor() as cur:
+            # La carga es un REEMPLAZO completo del dataset: la tabla deriva
+            # enteramente del CSV. Sin esto, las filas de una version anterior
+            # (por ejemplo, las de un estudiante duplicado que ahora se
+            # consolidan) quedarian mezcladas con las nuevas, porque el
+            # ON CONFLICT es por `fila_csv` y la fila descartada tenia otro
+            # numero de linea.
+            if not args.append:
+                cur.execute("DELETE FROM dataset_saber_pro_real")
+                print("[info] Tabla dataset_saber_pro_real vaciada (carga completa).")
             execute_values(cur, INSERT_SQL, rows, page_size=200)
         conn.commit()
         print(f"[ok] Insertadas/actualizadas: {len(rows)} filas en dataset_saber_pro_real.")

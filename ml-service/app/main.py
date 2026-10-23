@@ -82,27 +82,40 @@ app = FastAPI(
     description="""
 ## API REST para Predicción de Resultados Saber Pro
 
-Este sistema utiliza un modelo de **Regresión Logística Múltiple** para predecir
-el rendimiento esperado de estudiantes universitarios en el examen Saber Pro.
+Este sistema predice el **puntaje esperado** de estudiantes universitarios en
+el examen Saber Pro, a partir de su trayectoria académica.
 
 ### Características
 
-- Predicción individual de desempeño (Bajo, Medio, Alto)
+- Predicción del puntaje global estimado (escala 0-450) con su intervalo
+- Puntaje estimado por área (matemáticas, lectura crítica, inglés)
+- Banda de desempeño (Bajo / Medio / Alto) con su probabilidad
 - Historial de predicciones por estudiante
 - Estadísticas generales del sistema
-- Recomendaciones personalizadas basadas en resultados
+- Explicabilidad por feature (SHAP)
 
 ### Modelo ML
 
-El modelo considera las siguientes variables de entrada:
+El modelo v2 es un **regresor de Gradient Boosting / Random Forest** entrenado
+sobre el puntaje real de examen observado en la cohorte. Las variables de
+entrada son 14:
+
 - Promedio académico acumulado
-- Promedio de materias básicas
-- Promedio de materias de ingeniería
-- Número de materias reprobadas
-- Porcentaje de créditos aprobados
+- Promedio de materias básicas, de ingeniería, de programación y de
+  matemáticas-estadística
+- Número de asignaturas reprobadas
+- Porcentaje de avance en créditos
 - Semestre actual
 - Estrato socioeconómico
+- Créditos y asignaturas aprobadas
+- Edad
 - Género
+- Nivel de inglés (A1..C2)
+
+**Sobre el examen:** el target disponible en la cohorte es el puntaje del
+**Saber 11** (el antecedente del Saber Pro, con los mismos tres dominios).
+No hay puntajes de Saber Pro porque el examen aún no se ha presentado: la
+predicción es a futuro y supone que el desempeño en la prueba es transferible.
 
 ### Autores
 Sistema desarrollado para la Universidad.
@@ -141,7 +154,7 @@ async def root():
         "message": "Sistema Predictor Saber Pro",
         "description": "API REST para predicción de resultados Saber Pro",
         "version": "1.0.0",
-        "model_type": "Regresión Logística Múltiple",
+        "model_type": "Random Forest / Gradient Boosting (regresión del puntaje)",
         "endpoints": {
             "docs": "/docs",
             "redoc": "/redoc",

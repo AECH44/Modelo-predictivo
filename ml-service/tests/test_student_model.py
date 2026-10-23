@@ -20,13 +20,14 @@ from app.models.student_model import (
 
 
 # ---------------------------------------------------------------------------
-# StudentInput: validacion de las 13 features del modelo
+# StudentInput: validacion de las 14 features del modelo v2
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
 def base_input():
-    """13 features validas. Sirve como base para tests de override."""
+    """14 features validas. Sirve como base para tests de override."""
     return {
+        "promedio_acumulado": 3.6,
         "promedio_materias_basicas": 3.5,
         "promedio_ingenieria": 3.8,
         "promedio_programacion": 3.6,
@@ -116,6 +117,13 @@ class TestStudentInputInvalid:
         with pytest.raises(ValidationError):
             StudentInput(**sin_edad)
 
+    def test_rechaza_promedio_acumulado_fuera_de_rango(self, base_input):
+        """El modelo v2 usa el promedio acumulado como feature: es obligatoria."""
+        with pytest.raises(ValidationError):
+            StudentInput(**{**base_input, "promedio_acumulado": -0.1})
+        with pytest.raises(ValidationError):
+            StudentInput(**{**base_input, "promedio_acumulado": 5.1})
+
 
 # ---------------------------------------------------------------------------
 # PredictionResponse: contrato de salida
@@ -146,7 +154,7 @@ class TestPredictionResponse:
             recomendacion="x",
             timestamp=datetime.now(),
         )
-        assert r.model_version == "real-data-v1"
+        assert r.model_version == "saberpro-v2"
 
     def test_probabilities_dict_vacio_por_defecto(self):
         from datetime import datetime

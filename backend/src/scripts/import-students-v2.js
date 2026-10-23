@@ -34,7 +34,13 @@ import { pool, testConnection } from '../db.js'
 import { hashPassword } from '../auth.js'
 import { upsertProfile, savePrediction } from '../profiles.js'
 import { computePrediction } from '../predictor.js'
-import { parseCsvRow, validateRow, splitMetadata } from '../lib/csv-to-profile.js'
+import {
+  parseCsvRow,
+  validateRow,
+  splitMetadata,
+  selectBestRowsPerStudent,
+} from '../lib/csv-to-profile.js'
+import { upsertUserAsStudent } from '../lib/upsert-user.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -48,8 +54,6 @@ const DEFAULT_CSV = path.resolve(
   'base-de-datos-para-proyecto-de-grado-Ing-_1_.csv',
 )
 
-const PROTECTED_ROLES = new Set(['administrador', 'rector', 'decano', 'profesor'])
-
 function fail(msg) {
   console.error(`\n[ERROR] ${msg}\n`)
   process.exit(1)
@@ -57,63 +61,6 @@ function fail(msg) {
 
 function normalizeHeader(s) {
   return (s || '').toString().trim()
-}
-
-// =====================================================================
-// upsertUserAsStudent(client, { documento, email, nombres, passwordHash })
-//   Idempotente: si existe por documento o email actualiza; si no crea.
-//   Rechaza:
-//     - cuentas con is_synthetic=true (R5)
-//     - cuentas con role protegido (R6) — admin/rector/decano/profesor
-// =====================================================================
-async function upsertUserAsStudent(client, { documento, email, nombres, passwordHash }) {
-  const found = await client.query(
-    `SELECT id, documento, email, role, is_synthetic
-       FROM usuarios
-      WHERE documento = $1 OR LOWER(email) = LOWER($2)
-      LIMIT 1`,
-    [documento, email],
-  )
-  const existing = found.rows[0]
-
-  if (existing) {
-    if (existing.is_synthetic === true) {
-      return { ok: false, accion: 'skip_sintetica', reason: 'cuenta institucional con flag sintético' }
-    }
-    if (PROTECTED_ROLES.has(existing.role)) {
-      return {
-        ok: false,
-        accion: 'skip_protegido',
-        reason: `cuenta con role protegido (${existing.role})`,
-      }
-    }
-    const upd = await client.query(
-      `UPDATE usuarios
-          SET documento = $1,
-              username  = $2,
-              email     = LOWER($3),
-              role      = 'estudiante',
-              program   = 'sistemas',
-              password_hash = $4,
-              is_active = TRUE,
-              updated_at = NOW()
-        WHERE id = $5
-        RETURNING id, documento, email, role`,
-      [documento, nombres, email, passwordHash, existing.id],
-    )
-    return { ok: true, accion: 'actualizado', row: upd.rows[0] }
-  }
-
-  const ins = await client.query(
-    `INSERT INTO usuarios
-       (documento, username, email, password_hash, role, program,
-        semester, study_hours, english_level, is_active)
-     VALUES ($1, $2, LOWER($3), $4, 'estudiante', 'sistemas',
-             '8', '12', 'B1', TRUE)
-     RETURNING id, documento, email, role`,
-    [documento, nombres, email, passwordHash],
-  )
-  return { ok: true, accion: 'creado', row: ins.rows[0] }
 }
 
 async function main() {
@@ -156,6 +103,27 @@ async function main() {
   const headerCols = Object.keys(rows[0])
   console.log(`[import-students-v2] Columnas (${headerCols.length}): ${headerCols.slice(0, 8).join(', ')} ...`)
 
+  // Deduplicacion: un mismo estudiante puede venir en varias filas (una por
+  // corte de su carrera). Se conserva la mejor (con datos y semestre mas
+  // alto) en vez de descartar la repetida y quedarse con la primera.
+  const dedupe = selectBestRowsPerStudent(rows)
+  if (dedupe.resueltos.length) {
+    console.log(
+      `[import-students-v2] ${dedupe.resueltos.length} estudiantes venían repetidos ` +
+      `(se conserva la fila con datos y semestre más alto):`,
+    )
+    for (const d of dedupe.resueltos) {
+      console.log(
+        `    ${d.documento} ${d.nombres}: ${d.filas} filas -> sem ${d.semestreElegido} ` +
+        `(prom ${d.promedioElegido}); descartadas sem ${d.semestreDescartado.join(', ')} ` +
+        `(prom ${d.promedioDescartado.join(', ')})`,
+      )
+    }
+  }
+  // `filas` conserva el indice original del CSV para que los mensajes de
+  // error sigan apuntando a la linea correcta del archivo.
+  const filas = dedupe.rows
+
   if (!dryRun) await testConnection()
 
   const seenCorreos = new Set()
@@ -165,14 +133,16 @@ async function main() {
   let skipped = 0
   let predictionOk = 0
   let predictionFail = 0
+  let predictionSinDatos = 0
   const errors = []
   const credenciales = []
 
-  const total = limit > 0 ? Math.min(limit, rows.length) : rows.length
+  const total = limit > 0 ? Math.min(limit, filas.length) : filas.length
 
   for (let i = 0; i < total; i++) {
-    const r = rows[i]
-    const fila = i + 2 // +1 header, +1 base-1
+    const r = filas[i].fila
+    // Numero de linea real en el CSV original (para los mensajes).
+    const fila = filas[i].indice + 2 // +1 header, +1 base-1
 
     const parsed = parseCsvRow(r)
     const validation = validateRow(parsed)
@@ -222,6 +192,9 @@ async function main() {
         email: correo,
         nombres,
         passwordHash,
+        // Solo con --reset se re-hashea la contrasena de un usuario que ya
+        // existe. Sin el flag, se respeta la que el estudiante haya cambiado.
+        resetPassword: reset,
       })
       if (!upsertResult.ok) {
         errors.push(`Fila ${fila}: ${upsertResult.accion} (${upsertResult.reason})`)
@@ -240,9 +213,16 @@ async function main() {
       // el usuario creado y emitimos warn (R7).
       try {
         const prediction = await computePrediction(profile)
-        await savePrediction(userId, prediction, client)
-        predictionOutcome = 'ok'
-        predictionOk++
+        if (!prediction) {
+          // Estudiante de primer semestre: sin historial academico todavia, no
+          // hay prediccion que generar. No es un error.
+          predictionOutcome = 'sin_datos'
+          predictionSinDatos++
+        } else {
+          await savePrediction(userId, prediction, client)
+          predictionOutcome = 'ok'
+          predictionOk++
+        }
       } catch (err) {
         predictionOutcome = 'fail'
         predictionFail++
@@ -290,6 +270,7 @@ async function main() {
   console.log(`  Omitidos:         ${skipped}`)
   console.log(`  Predicciones OK:   ${predictionOk}`)
   console.log(`  Predicciones FAIL:${predictionFail}`)
+  console.log(`  Sin datos (1er semestre): ${predictionSinDatos}`)
 
   if (errors.length) {
     console.log(`\n  Detalles (${errors.length}):`)

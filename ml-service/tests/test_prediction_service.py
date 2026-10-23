@@ -20,6 +20,7 @@ from app.models.student_model import StudentInput
 @pytest.fixture
 def student_input_valido():
     return StudentInput(
+        promedio_acumulado=3.6,
         promedio_materias_basicas=3.5,
         promedio_ingenieria=3.8,
         promedio_programacion=3.6,
@@ -88,6 +89,121 @@ class TestPrepareFeatures:
 
 
 # ---------------------------------------------------------------------------
+# _prepare_features_v2: contrato de features con el modelo v2
+# ---------------------------------------------------------------------------
+
+class TestPrepareFeaturesV2:
+    """El modelo v2 usa 14 features (incluye el promedio acumulado)."""
+
+    def test_devuelve_una_sola_fila(self, student_input_valido):
+        df = PredictionService._prepare_features_v2(student_input_valido)
+        assert len(df) == 1
+
+    def test_tiene_exactamente_14_columnas(self, student_input_valido):
+        df = PredictionService._prepare_features_v2(student_input_valido)
+        assert df.shape[1] == 14
+
+    def test_los_nombres_de_columnas_coinciden_con_el_contrato_del_pkl(
+        self, student_input_valido
+    ):
+        df = PredictionService._prepare_features_v2(student_input_valido)
+        expected = {
+            "promedio_acumulado",
+            "promedio_materias_basicas",
+            "promedio_ingenieria",
+            "promedio_programacion",
+            "promedio_matematica_estadistica",
+            "asignaturas_reprobadas",
+            "porcentaje_avance",
+            "semestre_actual",
+            "estrato",
+            "creditos_aprobados",
+            "asignaturas_aprobadas",
+            "edad",
+            "genero",
+            "promedio_ingles_nivel",
+        }
+        assert set(df.columns) == expected
+
+    def test_incluye_el_promedio_acumulado(self, student_input_valido):
+        """Sin esta feature el modelo v2 no puede predecir: es la mas
+        informativa y no hay fuga (el target es un puntaje de examen)."""
+        df = PredictionService._prepare_features_v2(student_input_valido)
+        assert df.iloc[0]["promedio_acumulado"] == 3.6
+
+    def test_los_valores_se_pasan_tales_cuales(self, student_input_valido):
+        df = PredictionService._prepare_features_v2(student_input_valido)
+        row = df.iloc[0]
+        assert row["promedio_ingenieria"] == 3.8
+        assert row["edad"] == 22
+        assert row["genero"] == "M"
+        assert row["promedio_ingles_nivel"] == "B1"
+
+
+# ---------------------------------------------------------------------------
+# _band_from_score: la banda sale del puntaje, no al reves
+# ---------------------------------------------------------------------------
+
+class TestBandFromScore:
+    """Los umbrales de banda vienen del artefacto del modelo v2."""
+
+    def setup_method(self):
+        self._v2_original = PredictionService._v2
+        PredictionService._v2 = {"bandas": {"bajo_max": 253.3, "medio_max": 307.0}}
+
+    def teardown_method(self):
+        PredictionService._v2 = self._v2_original
+
+    def test_bajo_por_debajo_del_primer_corte(self):
+        assert PredictionService._band_from_score(200.0) == "Bajo"
+
+    def test_medio_entre_los_dos_cortes(self):
+        assert PredictionService._band_from_score(280.0) == "Medio"
+
+    def test_alto_por_encima_del_segundo_corte(self):
+        assert PredictionService._band_from_score(350.0) == "Alto"
+
+    def test_los_cortes_son_inclusivos_en_el_limite_inferior(self):
+        assert PredictionService._band_from_score(253.3) == "Medio"
+
+    def test_usa_umbrales_por_defecto_si_no_hay_artefacto(self):
+        PredictionService._v2 = None
+        assert PredictionService._band_from_score(1000.0) == "Alto"
+        assert PredictionService._band_from_score(0.0) == "Bajo"
+
+
+# ---------------------------------------------------------------------------
+# _generate_recommendation_v2: el texto refleja el puntaje real
+# ---------------------------------------------------------------------------
+
+class TestGenerateRecommendationV2:
+    def test_menciona_el_puntaje_y_el_rango(self):
+        texto = PredictionService._generate_recommendation_v2(
+            280.0,
+            [{"id": "matematicas", "label": "Matematicas", "score": 58.0}],
+            "Medio",
+        )
+        assert "280" in texto
+        assert "rango probable" in texto
+
+    def test_menciona_el_area_debility_mas_fuerte(self):
+        texto = PredictionService._generate_recommendation_v2(
+            280.0,
+            [
+                {"id": "matematicas", "label": "Matematicas", "score": 60.0},
+                {"id": "ingles", "label": "Ingles", "score": 40.0},
+            ],
+            "Medio",
+        )
+        assert "Ingles" in texto
+        assert "Matematicas" in texto
+
+    def test_advertencia_sobre_el_margen_de_error(self):
+        texto = PredictionService._generate_recommendation_v2(280.0, [], "Medio")
+        assert "margen de error" in texto.lower()
+
+
+# ---------------------------------------------------------------------------
 # _generate_recommendation: contenido de las recomendaciones
 # ---------------------------------------------------------------------------
 
@@ -96,6 +212,7 @@ class TestGenerateRecommendation:
 
     def _make_student(self, **overrides):
         base = dict(
+            promedio_acumulado=3.6,
             promedio_materias_basicas=3.5,
             promedio_ingenieria=3.8,
             promedio_programacion=3.6,
