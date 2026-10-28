@@ -11,7 +11,11 @@
 # modelo anterior (clasificador de banda):
 #   docker-compose --profile train run --rm ml-training python train_from_real.py
 
-FROM python:3.11-slim
+# Python 3.14: el mismo del ml-service. Es el requisito minimo de numpy
+# 2.5.4 / scipy 1.18.1 / shap 0.53.0, y sobre todo lo que hace que el .pkl
+# que produce este contenedor sea compatible con el que sirve el ml-service
+# (mismo scikit-learn 1.9.1, mismo numpy). Si divergen, hay train/serve skew.
+FROM python:3.14-slim
 
 WORKDIR /app
 

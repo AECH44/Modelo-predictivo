@@ -1054,35 +1054,103 @@ function getProgramLabel(program) {
   return PROGRAMS[program] || PROGRAMS.sistemas
 }
 
-function metricCardsForRole(user, records = []) {
+// ---- KPIs institucionales ------------------------------------------------
+//
+// Los valores salen de la cohorte real que entrega /cohort/students, no de
+// constantes. OJO con la semantica: `clase` es el DESEMPENO que predice el
+// modelo (bajo|medio|alto) y "riesgo" es su inversa (clase 'bajo' = riesgo
+// alto). Los porcentajes usan como denominador a los estudiantes EVALUADOS
+// (los que tienen prediccion), no al total de la cohorte: los de primer
+// semestre no tienen historial academico y el modelo no les emite prediccion.
+function institutionalKpis(records, selectedProgram) {
+  const todos = Array.isArray(records) ? records : []
+  // `selectedProgram` acota el alcance ('all' = vista institucional). Los
+  // datos que llegan ya vienen filtrados, pero filtrar aqui evita que un
+  // cambio en el llamador desalinee los KPIs.
+  const students =
+    selectedProgram && selectedProgram !== 'all'
+      ? todos.filter((s) => s.program === selectedProgram)
+      : todos
+
+  const b = bucketize(students)
+  const evaluados = b.conPrediccion
+
+  // Porcentaje sobre los evaluados (no sobre el total de la cohorte).
+  const pctDeEvaluados = (n) =>
+    evaluados > 0 ? `${Math.round((n / evaluados) * 1000) / 10}%` : '—'
+
+  // Promedio del puntaje estimado por programa: sirve para identificar el
+  // programa lider. Con una sola ingenieria siempre sera esa, pero el
+  // calculo generaliza si la facultad suma programas.
+  const porPrograma = new Map()
+  for (const s of students) {
+    if (s.puntajeEstimado === null || s.puntajeEstimado === undefined) continue
+    const lista = porPrograma.get(s.program) || []
+    lista.push(Number(s.puntajeEstimado))
+    porPrograma.set(s.program, lista)
+  }
+  const ranking = [...porPrograma.entries()]
+    .map(([program, xs]) => ({
+      program,
+      promedio: xs.reduce((a, x) => a + x, 0) / xs.length,
+      estudiantes: xs.length,
+    }))
+    .sort((x, y) => y.promedio - x.promedio)
+
+  // Promedio academico acumulado real (GPA 0-5). Es el unico dato REAL de
+  // rendimiento disponible: el puntaje del Saber Pro todavia es prediccion.
+  const promedioAcumulado = avgOf(students, (s) => s.promedioAcumulado)
+
+  return {
+    students,
+    b,
+    evaluados,
+    pctDeEvaluados,
+    lider: ranking[0] || null,
+    promedioAcumulado,
+  }
+}
+
+function metricCardsForRole(user, records = [], selectedProgram = null) {
+  const { students, b, evaluados, pctDeEvaluados, lider, promedioAcumulado } =
+    institutionalKpis(records, selectedProgram)
+
+  const total = students.length
+  const cobertura = total > 0 ? Math.round((b.conPerfil / total) * 100) : 0
+  const promedioRedondeado =
+    b.promedioPuntaje !== null ? Math.round(b.promedioPuntaje) : '—'
+
   if (user.role === 'rector' || user.role === 'administrador') {
     return [
       {
-        icon: '🎓',
-        value: EMPTY_VALUE,
+        icon: user.role === 'rector' ? 'crown' : 'shield',
+        value: String(total),
         label: 'Total de estudiantes',
-        detail: '',
+        detail: `${evaluados} con prediccion · ${cobertura}% con perfil`,
         accent: 'indigo',
       },
       {
         icon: 'trend',
-        value: EMPTY_VALUE,
+        value: promedioRedondeado,
         label: 'Promedio institucional',
-        detail: '',
+        detail: 'puntaje estimado sobre 300',
         accent: 'cyan',
       },
       {
         icon: 'warning',
-        value: EMPTY_VALUE,
+        value: String(b.riesgoAlto),
         label: 'Riesgo critico',
-        detail: '',
+        detail: `${pctDeEvaluados(b.riesgoAlto)} de los evaluados`,
         accent: 'rose',
       },
       {
         icon: 'trophy',
-        value: EMPTY_VALUE,
+        value: lider ? getProgramLabel(lider.program) : '—',
+        valueIsText: true,
         label: 'Programa lider',
-        detail: '',
+        detail: lider
+          ? `promedio ${Math.round(lider.promedio)} · ${lider.estudiantes} estudiantes`
+          : 'sin predicciones',
         accent: 'lime',
       },
     ]
@@ -1092,30 +1160,31 @@ function metricCardsForRole(user, records = []) {
     return [
       {
         icon: 'users',
-        value: EMPTY_VALUE,
+        value: String(total),
         label: 'Estudiantes del programa',
-        detail: '',
+        detail: `${cobertura}% con perfil`,
         accent: 'indigo',
       },
       {
         icon: 'target',
-        value: EMPTY_VALUE,
+        value: promedioRedondeado,
         label: 'Promedio predicho',
-        detail: '',
+        detail: 'puntaje estimado sobre 300',
         accent: 'cyan',
       },
       {
         icon: 'warning',
-        value: EMPTY_VALUE,
+        value: String(b.riesgoAlto),
         label: 'Riesgo alto',
-        detail: '',
+        detail: `${pctDeEvaluados(b.riesgoAlto)} de los evaluados`,
         accent: 'rose',
       },
       {
         icon: 'book',
-        value: EMPTY_VALUE,
+        value:
+          promedioAcumulado !== null ? promedioAcumulado.toFixed(2) : '—',
         label: 'Puntaje real promedio',
-        detail: '',
+        detail: 'promedio academico acumulado (0-5)',
         accent: 'lime',
       },
     ]
@@ -1125,30 +1194,30 @@ function metricCardsForRole(user, records = []) {
     return [
       {
         icon: 'users',
-        value: EMPTY_VALUE,
+        value: String(total),
         label: 'Estudiantes en cohorte',
-        detail: '',
+        detail: `${evaluados} con prediccion`,
         accent: 'indigo',
       },
       {
         icon: 'trend',
-        value: EMPTY_VALUE,
+        value: promedioRedondeado,
         label: 'Promedio predicho',
-        detail: '',
+        detail: 'puntaje estimado sobre 300',
         accent: 'cyan',
       },
       {
         icon: 'warning',
-        value: EMPTY_VALUE,
+        value: String(b.riesgoAlto),
         label: 'Casos criticos',
-        detail: '',
+        detail: `${pctDeEvaluados(b.riesgoAlto)} de los evaluados`,
         accent: 'rose',
       },
       {
         icon: 'check',
-        value: EMPTY_VALUE,
+        value: String(b.riesgoBajo),
         label: 'Riesgo bajo',
-        detail: '',
+        detail: `${pctDeEvaluados(b.riesgoBajo)} de los evaluados`,
         accent: 'lime',
       },
     ]
@@ -2413,16 +2482,44 @@ function DashboardShell({
   const roleSettings = ROLE_CONFIG[user.role] || ROLE_CONFIG.estudiante
   const navItems = customNav || roleSettings.nav
   const [accountOpen, setAccountOpen] = useState(false)
+  // En movil el menu lateral es un cajon deslizable (ver la media query de
+  // 820px en App.css). En escritorio el estado no tiene efecto visible.
+  const [navOpen, setNavOpen] = useState(false)
+
+  // Con el cajon abierto, Escape lo cierra.
+  useEffect(() => {
+    if (!navOpen) return undefined
+    function onKeyDown(event) {
+      if (event.key === 'Escape') setNavOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [navOpen])
 
   function handleLogout() {
     onLogout()
     navigate('/login', { replace: true })
   }
 
+  function handleNavSelect(index, label) {
+    setNavOpen(false)
+    onNavSelect?.(index, label)
+  }
+
   return (
     <div className="dashboard-shell">
       <header className="topbar">
-        <div>
+        <button
+          className="menu-toggle"
+          type="button"
+          onClick={() => setNavOpen((open) => !open)}
+          aria-label={navOpen ? 'Cerrar menu' : 'Abrir menu'}
+          aria-expanded={navOpen}
+          aria-controls="app-sidebar"
+        >
+          <Icon name={navOpen ? 'x' : 'menu'} size={20} />
+        </button>
+        <div className="topbar-heading">
           <div className="topbar-title">{roleSettings.topbarTitle}</div>
           <div className="topbar-sub">{roleSettings.topbarSubtitle}</div>
         </div>
@@ -2434,21 +2531,43 @@ function DashboardShell({
             type="button"
             onClick={() => setAccountOpen(true)}
             title="Configurar mi cuenta"
+            aria-label="Configurar mi cuenta"
           >
             <Icon name="settings" size={16} />
-            Mi cuenta
+            <span className="btn-label">Mi cuenta</span>
           </button>
-          <button className="logout-button" type="button" onClick={handleLogout}>
-            Cerrar sesion
+          <button
+            className="logout-button"
+            type="button"
+            onClick={handleLogout}
+            title="Cerrar sesion"
+            aria-label="Cerrar sesion"
+          >
+            <span className="btn-icon">
+              <Icon name="logout" size={16} />
+            </span>
+            <span className="btn-label">Cerrar sesion</span>
           </button>
         </div>
       </header>
 
-      <aside className="sidebar">
+      {navOpen ? (
+        <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />
+      ) : null}
+
+      <aside className={`sidebar${navOpen ? ' open' : ''}`} id="app-sidebar">
         <div className="logo-wrap">
           <div className="logo-name">Saber Pro</div>
           <div className="logo-sub">PREDICTOR IA</div>
           <div className="logo-dept">{roleSettings.department}</div>
+          <button
+            className="sidebar-close"
+            type="button"
+            onClick={() => setNavOpen(false)}
+            aria-label="Cerrar menu"
+          >
+            <Icon name="x" size={18} />
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -2457,7 +2576,7 @@ function DashboardShell({
               className={`nav-item ${index === activeNavIndex ? 'active' : ''}`}
               key={label}
               type="button"
-              onClick={() => onNavSelect?.(index, label)}
+              onClick={() => handleNavSelect(index, label)}
             >
               <span className="nav-icon">
                 {index === 0 ? <Icon name={roleSettings.icon} size={16} /> : '·'}
@@ -2503,7 +2622,9 @@ function MetricsGrid({ user, records, selectedProgram }) {
           <div className="kpi-icon">
             <Icon name={metric.icon} size={22} />
           </div>
-          <div className="kpi-value">{metric.value}</div>
+          <div className={`kpi-value${metric.valueIsText ? ' kpi-value-text' : ''}`}>
+            {metric.value}
+          </div>
           <div className="kpi-label">{metric.label}</div>
           <div className="kpi-delta">{metric.detail}</div>
         </article>
@@ -6740,16 +6861,20 @@ function AdminAuditPanel() {
 const BACKEND_ORIGIN = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/api')
   .replace(/\/api\/?$/, '')
 
+// Graficos del analisis del modelo v2 (regresion del puntaje real).
+// Los genera ml-training/analyze_v2_results.py.
 const ANALYSIS_IMAGES = [
-  { src: `${BACKEND_ORIGIN}/assets/analysis/comparacion_metricas.png`, alt: 'Comparacion de metricas', title: 'Comparacion de metricas' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/matriz_confusion_gradientboostingclassifier.png`, alt: 'Matriz de confusion (GB)', title: 'Matriz de confusion - Gradient Boosting' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/matriz_confusion_logisticregression.png`, alt: 'Matriz de confusion (LR)', title: 'Matriz de confusion - Logistic Regression' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/feature_importance.png`, alt: 'Importancia de features', title: 'Importancia de features' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/distribucion_clases.png`, alt: 'Distribucion de clases', title: 'Distribucion real vs predicha' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/roc_curves.png`, alt: 'Curvas ROC', title: 'Curvas ROC (one-vs-rest)' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_predicho_vs_real.png`, alt: 'Puntaje predicho contra real', title: 'Predicho vs real (0-300)' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_residuos.png`, alt: 'Residuales del modelo', title: 'Residuales (real - predicho)' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_errores_por_area.png`, alt: 'Error por area del examen', title: 'MAE por area del examen' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_importance_variables.png`, alt: 'Importancia de las variables', title: 'Importancia de variables (permutacion)' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_distribucion_bandas.png`, alt: 'Distribucion por banda', title: 'Bandas: observado vs predicho' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_error_por_edad.png`, alt: 'Error por rango de edad', title: 'MAE por rango de edad' },
 ]
 
+// Campos que acepta el modelo v2 (14 features: 12 numericas + 2 categoricas).
 const PREDICT_FORM_DEFAULTS = {
+  promedio_acumulado: 3.5,
   promedio_materias_basicas: 3.5,
   promedio_ingenieria: 3.5,
   promedio_programacion: 3.5,
@@ -6763,16 +6888,6 @@ const PREDICT_FORM_DEFAULTS = {
   edad: 22,
   genero: 'M',
   promedio_ingles_nivel: 'B1',
-}
-
-function MetricCard({ label, value, hint, tone = 'default' }) {
-  return (
-    <article className={`card metric-card metric-card-${tone}`}>
-      <p className="metric-label">{label}</p>
-      <p className="metric-value">{value}</p>
-      {hint ? <p className="metric-hint">{hint}</p> : null}
-    </article>
-  )
 }
 
 // Pill de estado de servicios: 3 puntos verde/amarillo/rojo segun health.
@@ -6797,28 +6912,6 @@ function HealthPill({ health, status }) {
         <span className="health-dot-mark" /> FastAPI
       </span>
     </div>
-  )
-}
-
-// Fila de la tabla comparativa LR vs GB con destacado del ganador.
-function CompareRow({ label, a, b, fmt }) {
-  const cmp = (x, y) => (x == null && y == null ? 0 : x == null ? -1 : y == null ? 1 : y - x)
-  const winner = cmp(a, b)
-  return (
-    <tr>
-      <td className="compare-label">{label}</td>
-      <td className={`table-code ${winner > 0 ? 'compare-loser' : ''}`}>{a != null ? fmt(a) : '-'}</td>
-      <td className={`table-code ${winner < 0 ? 'compare-loser' : ''}`}>{b != null ? fmt(b) : '-'}</td>
-      <td>
-        {winner > 0 ? (
-          <span className="compare-winner compare-winner-lr">LR &star;</span>
-        ) : winner < 0 ? (
-          <span className="compare-winner compare-winner-gb">GB &star;</span>
-        ) : (
-          <span className="muted-text small">empate</span>
-        )}
-      </td>
-    </tr>
   )
 }
 
@@ -6926,11 +7019,11 @@ function AdminAnalysisPanel() {
   }
 
   // Helpers para metricas
-  const bestName = metrics?.best_model
-  const bestM = bestName ? metrics.all_models[bestName] : null
-  const lrM = metrics?.all_models?.LogisticRegression
-  const gbM = metrics?.all_models?.GradientBoostingClassifier
   const fmt = (n, d = 4) => (n == null ? '-' : Number(n).toFixed(d))
+  const fmt2 = (n, d = 2) => (n == null ? '-' : Number(n).toFixed(d))
+  const g = metrics?.global
+  const muestra = metrics?.muestra
+  const bandas = metrics?.bandas
 
   return (
     <div className="analysis-panel">
@@ -6939,12 +7032,21 @@ function AdminAnalysisPanel() {
           <p className="banner-kicker">Modelo predictivo</p>
           <h2>Analisis del modelo entrenado con datos reales</h2>
           <p className="banner-text">
-            Esta vista resume el desempeno del clasificador Gradient Boosting
-            entrenado con 627 registros del dataset
-            {' '}<code>dataset_saber_pro_real</code> (736 filas, 109 excluidas por
-            promedio acumulado en 0). Target derivado de{' '}
-            <code>promedio_acumulado</code>: Bajo &lt; 3.0, Medio 3.0-3.99,
-            Alto &gt;= 4.0.
+            El modelo <code>{metrics?.model_version || 'saberpro-v2'}</code> es una{' '}
+            <strong>regresion</strong> que predice el <strong>puntaje real del
+            Saber Pro</strong> (escala 0-300). El objetivo es la{' '}
+            <strong>suma de las tres areas</strong> del examen (matematicas,
+            lectura critica e ingles, 0-100 cada una), no una banda del promedio
+            academico.
+            {muestra ? (
+              <>
+                {' '}Se entreno con <strong>{muestra.entrenadas}</strong> de las{' '}
+                {muestra.filas_dataset} filas del dataset{' '}
+                <code>dataset_saber_pro_real</code>: {muestra.con_areas_completas}{' '}
+                tienen las tres areas del examen y {muestra.con_historial} ademas
+                historial academico.
+              </>
+            ) : null}
           </p>
         </div>
         <HealthPill health={health} status={healthStatus} />
@@ -6952,41 +7054,34 @@ function AdminAnalysisPanel() {
 
       <section className="analysis-kpis">
         <article className="kpi-card indigo">
-          <div className="kpi-icon"><Icon name="trophy" size={22} /></div>
-          <p className="kpi-value kpi-value-text">{bestName || (metricsStatus === 'loading' ? 'Cargando...' : 'N/D')}</p>
-          <p className="kpi-label">Mejor modelo</p>
-          <p className="kpi-detail">Seleccionado por accuracy</p>
+          <div className="kpi-icon"><Icon name="target" size={22} /></div>
+          <p className="kpi-value">{g ? fmt2(g.mae) : '-'}</p>
+          <p className="kpi-label">MAE global</p>
+          <p className="kpi-detail">Puntos de error sobre 300</p>
         </article>
         <article className="kpi-card cyan">
-          <div className="kpi-icon"><Icon name="target" size={22} /></div>
-          <p className="kpi-value">{bestM && bestM.accuracy != null ? bestM.accuracy.toFixed(4) : '-'}</p>
-          <p className="kpi-label">Accuracy</p>
-          <p className="kpi-detail">Sobre 126 muestras de test</p>
+          <div className="kpi-icon"><Icon name="trend" size={22} /></div>
+          <p className="kpi-value">{g ? fmt(g.r2, 3) : '-'}</p>
+          <p className="kpi-label">R2 global</p>
+          <p className="kpi-detail">Varianza del examen explicada</p>
         </article>
         <article className="kpi-card violet">
           <div className="kpi-icon"><Icon name="chart" size={22} /></div>
-          <p className="kpi-value">{bestM && bestM.f1_weighted != null ? bestM.f1_weighted.toFixed(4) : '-'}</p>
-          <p className="kpi-label">F1 weighted</p>
-          <p className="kpi-detail">Promedio ponderado por soporte</p>
+          <p className="kpi-value">{g ? fmt2(g.baseline_mae) : '-'}</p>
+          <p className="kpi-label">MAE linea base</p>
+          <p className="kpi-detail">Predecir siempre la media</p>
         </article>
         <article className="kpi-card lime">
-          <div className="kpi-icon"><Icon name="trend" size={22} /></div>
-          <p className="kpi-value">{bestM && bestM.roc_auc_ovr_weighted != null
-            ? bestM.roc_auc_ovr_weighted.toFixed(4) : '-'}</p>
-          <p className="kpi-label">ROC AUC (OvR)</p>
-          <p className="kpi-detail">Promedio one-vs-rest</p>
+          <div className="kpi-icon"><Icon name="warning" size={22} /></div>
+          <p className="kpi-value">{g ? `±${fmt2(g.margen_error, 1)}` : '-'}</p>
+          <p className="kpi-label">Margen de error</p>
+          <p className="kpi-detail">Se muestra con cada puntaje</p>
         </article>
         <article className="kpi-card rose">
           <div className="kpi-icon"><Icon name="file" size={22} /></div>
-          <p className="kpi-value">{metrics ? `${metrics.rows_used} / ${metrics.rows_total}` : '-'}</p>
-          <p className="kpi-label">Filas usadas</p>
-          <p className="kpi-detail">109 excluidas (promedio=0)</p>
-        </article>
-        <article className="kpi-card emerald">
-          <div className="kpi-icon"><Icon name="inbox" size={22} /></div>
-          <p className="kpi-value kpi-value-text">{metrics ? metrics.model_version : '-'}</p>
-          <p className="kpi-label">Version</p>
-          <p className="kpi-detail">train_from_real.py</p>
+          <p className="kpi-value">{muestra ? `${muestra.entrenadas} / ${muestra.filas_dataset}` : '-'}</p>
+          <p className="kpi-label">Filas de entrenamiento</p>
+          <p className="kpi-detail">Con las 3 areas y con historial</p>
         </article>
       </section>
 
@@ -6998,7 +7093,7 @@ function AdminAnalysisPanel() {
 
       <section className="card">
         <div className="section-header">
-          <h3>Comparativa de modelos (Logistic Regression vs Gradient Boosting)</h3>
+          <h3>Comparativa de modelos de regresion (puntaje global)</h3>
           <button
             className="auth-button-secondary"
             type="button"
@@ -7009,26 +7104,36 @@ function AdminAnalysisPanel() {
           </button>
         </div>
         <p className="muted-text">
-          Comparacion lado a lado de los dos modelos entrenados con
-          {' '}<code>desercion_metrics.json</code>. La estrella marca al ganador
-          por accuracy en el conjunto de test.
+          Modelos entrenados sobre el mismo objetivo (puntaje global de 0 a 300)
+          y evaluados con <code>RepeatedKFold</code> (5 cortes x 3 repeticiones).
+          En una regresion gana el de menor <strong>MAE</strong>;{' '}
+          <code>DummyMedia</code> es la linea base: predecir siempre el promedio
+          de la muestra.
         </p>
-        {metricsStatus === 'ready' && (lrM || gbM) ? (
+        {metricsStatus === 'ready' && metrics?.comparativa?.length ? (
           <table className="ab-compare-table">
             <thead>
               <tr>
-                <th>Metrica</th>
-                <th>Logistic Regression</th>
-                <th>Gradient Boosting</th>
-                <th>Ganador</th>
+                <th>Modelo</th>
+                <th>MAE</th>
+                <th>RMSE</th>
+                <th>R2</th>
               </tr>
             </thead>
             <tbody>
-              <CompareRow label="Accuracy" a={lrM?.accuracy} b={gbM?.accuracy} fmt={fmt} />
-              <CompareRow label="Precision (weighted)" a={lrM?.precision_weighted} b={gbM?.precision_weighted} fmt={fmt} />
-              <CompareRow label="Recall (weighted)" a={lrM?.recall_weighted} b={gbM?.recall_weighted} fmt={fmt} />
-              <CompareRow label="F1 (weighted)" a={lrM?.f1_weighted} b={gbM?.f1_weighted} fmt={fmt} />
-              <CompareRow label="ROC AUC (OvR)" a={lrM?.roc_auc_ovr_weighted} b={gbM?.roc_auc_ovr_weighted} fmt={fmt} />
+              {metrics.comparativa.map((m) => (
+                <tr key={m.modelo}>
+                  <td className="compare-label">
+                    {m.modelo}
+                    {m.es_mejor ? (
+                      <span className="compare-winner compare-winner-gb">Mejor</span>
+                    ) : null}
+                  </td>
+                  <td className="table-code">{fmt2(m.mae)}</td>
+                  <td className="table-code">{fmt2(m.rmse)}</td>
+                  <td className="table-code">{fmt(m.r2, 4)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         ) : null}
@@ -7037,9 +7142,97 @@ function AdminAnalysisPanel() {
 
       <section className="card">
         <div className="section-header">
-          <h3>Distribucion del dataset</h3>
+          <h3>Desempeno por area del examen</h3>
+          <span className="live-chip">0-100 por area</span>
+        </div>
+        <p className="muted-text">
+          Cada area del Saber Pro se predice con su propio regresor y el puntaje
+          global es la <strong>suma de las areas predichas</strong>. Asi lo que
+          ve el estudiante siempre cuadra con las areas mostradas.
+        </p>
+        {metricsStatus === 'ready' && metrics?.areas?.length ? (
+          <table className="ab-compare-table">
+            <thead>
+              <tr>
+                <th>Objetivo</th>
+                <th>Modelo</th>
+                <th>MAE</th>
+                <th>RMSE</th>
+                <th>R2</th>
+                <th>MAE linea base</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.areas.map((a) => (
+                <tr key={a.clave}>
+                  <td className="compare-label">{a.nombre}</td>
+                  <td>{a.modelo}</td>
+                  <td className="table-code">{fmt2(a.mae)}</td>
+                  <td className="table-code">{fmt2(a.rmse)}</td>
+                  <td className="table-code">{fmt(a.r2, 4)}</td>
+                  <td className="table-code">{fmt2(a.baseline_mae)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="compare-label">Global (suma de areas)</td>
+                <td>3 regresores</td>
+                <td className="table-code">{fmt2(g?.mae)}</td>
+                <td className="table-code">{fmt2(g?.rmse)}</td>
+                <td className="table-code">{fmt(g?.r2, 4)}</td>
+                <td className="table-code">{fmt2(g?.baseline_mae)}</td>
+              </tr>
+            </tbody>
+          </table>
+        ) : null}
+      </section>
+
+      {bandas ? (
+        <section className="card">
+          <div className="section-header">
+            <h3>Bandas de desempeno</h3>
+            <span className="live-chip">Cortes sobre 300</span>
+          </div>
+          <p className="muted-text">
+            El puntaje se resume en tres bandas para la lectura institucional.
+            Los cortes son los percentiles 30 y 70 de la cohorte que presento el
+            examen: por debajo de <strong>{bandas.bajo_max}</strong> el
+            desempeño es <strong>bajo</strong>, entre {bandas.bajo_max} y{' '}
+            <strong>{bandas.medio_max}</strong> es <strong>medio</strong>, y{' '}
+            {bandas.medio_max} o mas es <strong>alto</strong>.{' '}
+            {bandas.criterio ? <em>{bandas.criterio}.</em> : null}
+          </p>
+        </section>
+      ) : null}
+
+      {metrics?.advertencias?.length ? (
+        <section className="card">
+          <div className="section-header">
+            <h3>Advertencias metodologicas</h3>
+            <span className="live-chip">Del entrenamiento</span>
+          </div>
+          <ul className="analysis-warnings">
+            {metrics.advertencias.map((a) => <li key={a}>{a}</li>)}
+          </ul>
+          {metrics.nota_metodologica ? (
+            <p className="muted-text">
+              <strong>Nota metodologica:</strong> {metrics.nota_metodologica}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="card">
+        <div className="section-header">
+          <h3>Distribucion por banda</h3>
           <span className="live-chip">{datasetStats?.total || '—'} registros</span>
         </div>
+        <p className="muted-text">
+          La distribucion <strong>observada</strong> es la del puntaje real en la
+          muestra de entrenamiento ({datasetStats?.rows_used ?? '—'} estudiantes
+          que presentaron el examen). La <strong>predicha</strong> es la que el
+          modelo asigno a cada estudiante evaluado de la cohorte. Las dos usan
+          los mismos cortes de banda, de modo que se comparan directamente.
+        </p>
         {datasetStatus === 'loading' ? (
           <div className="dataset-distribution">
             <div className="skeleton skeleton-stacked" />
@@ -7050,28 +7243,57 @@ function AdminAnalysisPanel() {
         {datasetStatus === 'error' ? <p className="muted-text">No se pudo cargar la distribucion.</p> : null}
         {datasetStatus === 'ready' && datasetStats ? (
           (() => {
-            const dist = datasetStats.target_distribution || {}
-            const total = datasetStats.total || 1
+            const observada = datasetStats.target_distribution || {}
+            const predicha = datasetStats.predicted_distribution || {}
+            const totalObservado = datasetStats.rows_used || 1
+            const totalPredicho =
+              ['Bajo', 'Medio', 'Alto'].reduce(
+                (acc, c) => acc + Number(predicha[c] || 0),
+                0,
+              ) || 1
             return (
-              <div className="dataset-distribution">
-                {['Bajo', 'Medio', 'Alto'].map((cls) => {
-                  const n = Number(dist[cls] || 0)
-                  const pct = total > 0 ? (n / total) * 100 : 0
-                  return (
-                    <div key={cls} className={`dataset-card dataset-${cls.toLowerCase()}`}>
-                      <div className="dataset-card-header">
-                        <span className="dataset-card-label">{cls}</span>
-                        <span className="dataset-card-pct">{pct.toFixed(1)}%</span>
+              <>
+                <h4 className="distribution-subtitle">Observada (muestra de entrenamiento)</h4>
+                <div className="dataset-distribution">
+                  {['Bajo', 'Medio', 'Alto'].map((cls) => {
+                    const n = Number(observada[cls] || 0)
+                    const pct = totalObservado > 0 ? (n / totalObservado) * 100 : 0
+                    return (
+                      <div key={`obs-${cls}`} className={`dataset-card dataset-${cls.toLowerCase()}`}>
+                        <div className="dataset-card-header">
+                          <span className="dataset-card-label">{cls}</span>
+                          <span className="dataset-card-pct">{pct.toFixed(1)}%</span>
+                        </div>
+                        <p className="dataset-card-value">{n}</p>
+                        <div className="dataset-card-bar">
+                          <div className="dataset-card-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="dataset-card-meta">{n} de {totalObservado} estudiantes</p>
                       </div>
-                      <p className="dataset-card-value">{n}</p>
-                      <div className="dataset-card-bar">
-                        <div className="dataset-card-bar-fill" style={{ width: `${pct}%` }} />
+                    )
+                  })}
+                </div>
+                <h4 className="distribution-subtitle">Predicha (cohorte evaluada)</h4>
+                <div className="dataset-distribution">
+                  {['Bajo', 'Medio', 'Alto'].map((cls) => {
+                    const n = Number(predicha[cls] || 0)
+                    const pct = totalPredicho > 0 ? (n / totalPredicho) * 100 : 0
+                    return (
+                      <div key={`pred-${cls}`} className={`dataset-card dataset-${cls.toLowerCase()}`}>
+                        <div className="dataset-card-header">
+                          <span className="dataset-card-label">{cls}</span>
+                          <span className="dataset-card-pct">{pct.toFixed(1)}%</span>
+                        </div>
+                        <p className="dataset-card-value">{n}</p>
+                        <div className="dataset-card-bar">
+                          <div className="dataset-card-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="dataset-card-meta">{n} de {totalPredicho} estudiantes</p>
                       </div>
-                      <p className="dataset-card-meta">{n} de {total} registros</p>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              </>
             )
           })()
         ) : null}
@@ -7154,8 +7376,10 @@ function AdminAnalysisPanel() {
           <span className="live-chip">PNG · {ANALYSIS_IMAGES.length} figuras</span>
         </div>
         <p className="muted-text">
-          Generados por <code>ml/analyze_results.py</code> a partir del
-          modelo serializado en <code>ml/trained_models/saberpro_model.pkl</code>.
+          Generados por <code>ml-training/analyze_v2_results.py</code> a partir
+          del modelo serializado en{' '}
+          <code>ml-training/trained_models/saberpro_model_v2.pkl</code> y de la
+          misma muestra con la que se entreno.
         </p>
         <div className="analysis-gallery">
           {ANALYSIS_IMAGES.map((img) => (
@@ -7172,14 +7396,22 @@ function AdminAnalysisPanel() {
       <section className="card">
         <div className="section-header">
           <h3>Probar el modelo</h3>
-          <span className="live-chip">13 features</span>
+          <span className="live-chip">14 features</span>
         </div>
         <p className="muted-text">
-          Envia 13 features al modelo real. La peticion pasa por Express
-          (puerto 4000) y luego a FastAPI (puerto 8000) que carga el .pkl.
+          Envia las 14 variables que usa el modelo v2 (12 numericas y 2
+          categoricas). La peticion pasa por Express (puerto 4000) y luego a
+          FastAPI (puerto 8000), que carga el .pkl y devuelve el puntaje
+          estimado con su margen de error y la probabilidad de cada banda.
         </p>
         <form onSubmit={handlePredict} className="predict-form">
           <div className="form-grid predict-form-grid">
+            <label className="form-field">
+              <span>Promedio acumulado (0-5)</span>
+              <input type="number" step="0.01" min="0" max="5" required
+                value={form.promedio_acumulado}
+                onChange={(e) => updateField('promedio_acumulado', Number(e.target.value))} />
+            </label>
             <label className="form-field">
               <span>Promedio basicas (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
@@ -7291,62 +7523,74 @@ function AdminAnalysisPanel() {
             }, {})
             return (
           <div className="prediction-result">
+            {prediction.puntaje_estimado != null ? (
+              <div className="prediction-score">
+                <div className="prediction-score-main">
+                  <span className="prediction-score-label">Puntaje estimado</span>
+                  <span className="prediction-score-value">
+                    {Math.round(Number(prediction.puntaje_estimado))}
+                    <small>/300</small>
+                  </span>
+                </div>
+                {prediction.puntaje_minimo != null && prediction.puntaje_maximo != null ? (
+                  <div className="prediction-score-range">
+                    <span className="prediction-score-label">Rango probable</span>
+                    <span className="prediction-score-range-value">
+                      {Math.round(Number(prediction.puntaje_minimo))} &ndash;{' '}
+                      {Math.round(Number(prediction.puntaje_maximo))} puntos
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className={`prediction-badge prediction-${outcome}`}>
               <div className="prediction-icon" aria-hidden="true">
                 <Icon name={iconName} size={22} />
               </div>
               <div className="prediction-body">
-                <span className="prediction-label">Prediccion del modelo</span>
+                <span className="prediction-label">Banda de desempeno</span>
                 <span className="prediction-class">{prediction.resultado}</span>
               </div>
-              <span className="prediction-confidence" title="Confianza del modelo">
-                {confDisplay} <small style={{ fontWeight: 500, opacity: 0.7 }}>confianza</small>
+              <span
+                className="prediction-confidence"
+                title="Probabilidad de que el estudiante caiga en esta banda (no es un margen sobre el puntaje)"
+              >
+                {confDisplay} <small style={{ fontWeight: 500, opacity: 0.7 }}>prob. de banda</small>
               </span>
             </div>
-            {prediction.probabilities ? (
-              <div className="probability-bars">
-                {probOrder.map((k) => {
-                  const label = k.charAt(0).toUpperCase() + k.slice(1)
-                  const p = Number(prediction.probabilities[label] ?? fallbackProbability[k])
-                  return (
-                    <div key={k} className={`prob-row prob-${k}`}>
-                      <span className="prob-name">{label}</span>
-                      <div className="prob-bar-track">
-                        <div
-                          className="prob-bar-fill"
-                          style={{ width: `${Math.max(0, Math.min(100, p))}%` }}
-                        />
-                      </div>
-                      <span className="prob-value">{p.toFixed(1)}%</span>
+            <div className="probability-bars">
+              {probOrder.map((k) => {
+                const label = k.charAt(0).toUpperCase() + k.slice(1)
+                // El servicio devuelve las probabilidades como fraccion (0-1);
+                // el fallback ya viene en porcentaje. Se normaliza a
+                // porcentaje en los dos casos (si no, las barras salen vacias).
+                const raw = prediction.probabilities?.[label]
+                const p =
+                  raw !== undefined && raw !== null && Number.isFinite(Number(raw))
+                    ? Number(raw) * 100
+                    : fallbackProbability[k]
+                return (
+                  <div key={k} className={`prob-row prob-${k}`}>
+                    <span className="prob-name">{label}</span>
+                    <div className="prob-bar-track">
+                      <div
+                        className="prob-bar-fill"
+                        style={{ width: `${Math.max(0, Math.min(100, p))}%` }}
+                      />
                     </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="probability-bars">
-                {probOrder.map((k) => {
-                  const label = k.charAt(0).toUpperCase() + k.slice(1)
-                  const p = fallbackProbability[k]
-                  return (
-                    <div key={k} className={`prob-row prob-${k}`}>
-                      <span className="prob-name">{label}</span>
-                      <div className="prob-bar-track">
-                        <div className="prob-bar-fill" style={{ width: `${p}%` }} />
-                      </div>
-                      <span className="prob-value">{p.toFixed(1)}%</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                    <span className="prob-value">{p.toFixed(1)}%</span>
+                  </div>
+                )
+              })}
+            </div>
             {Array.isArray(prediction.feature_contributions) && prediction.feature_contributions.length > 0 ? (
               <div className="shap-section">
-                <h4>Contribuciones SHAP por feature</h4>
+                <h4>Contribuciones SHAP por variable</h4>
                 <p className="muted-text small">
-                  Cada barra muestra el aporte de la feature a la probabilidad
-                  de la clase predicha (<em>{prediction.resultado}</em>).
-                  {' '}Rojo = la aumenta, verde = la disminuye. Lista ordenada
-                  por magnitud de impacto.
+                  Cada barra muestra el aporte de la variable al puntaje
+                  estimado, en <strong>puntos sobre el total de 300</strong>.
+                  {' '}Rojo = la sube, verde = la baja. Lista ordenada por
+                  magnitud de impacto.
                 </p>
                 {(() => {
                   const maxAbs = Math.max(

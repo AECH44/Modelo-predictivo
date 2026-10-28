@@ -1,0 +1,421 @@
+{
+  "model_version": "saberpro-v2",
+  "tipo": "regresion (puntaje real de examen)",
+  "source": "dataset_saber_pro_real (PostgreSQL)",
+  "target": {
+    "areas": {
+      "matematicas": "puntaje_matematicas_saber11",
+      "lectura_critica": "puntaje_lectura_critica_saber11",
+      "ingles": "puntaje_ingles_saber11"
+    },
+    "global": "suma de las tres areas (matematicas + lectura_critica + ingles)",
+    "escala": "areas 0-100 cada una; global 0-300 (escala del Saber Pro)",
+    "filtro": "las 3 areas con dato (> 0) y promedio_acumulado > 0",
+    "columna_del_csv_no_usada": {
+      "columna": "puntaje_global_saber11",
+      "motivo": "Esta en otra escala: es un indice ponderado (~1.46 * suma_areas + 29.8, max 409) y no el puntaje del Saber Pro (0-300). Usarla como target hacia predicciones por encima de 300."
+    }
+  },
+  "muestra": {
+    "filas_totales": 718,
+    "con_las_3_areas": 484,
+    "sin_areas_completas": 234,
+    "con_historial_academico": 451,
+    "excluidas_sin_historial": 33,
+    "csv_global_relacion_con_suma": {
+      "corr": 0.3995991660807729,
+      "nota": "La columna puntaje_global_saber11 del CSV esta en otra escala (indice ponderado ~1.46x la suma + 29.8, max 409). NO se usa como target: el Saber Pro se puntua sobre 300."
+    }
+  },
+  "features": {
+    "numeric": [
+      "promedio_acumulado",
+      "promedio_materias_basicas",
+      "promedio_ingenieria",
+      "promedio_programacion",
+      "promedio_matematica_estadistica",
+      "asignaturas_reprobadas",
+      "porcentaje_avance",
+      "semestre_actual",
+      "estrato",
+      "creditos_aprobados",
+      "asignaturas_aprobadas",
+      "edad"
+    ],
+    "categorical": [
+      "genero",
+      "promedio_ingles_nivel"
+    ]
+  },
+  "cv": {
+    "splits": 5,
+    "repeats": 3,
+    "random_state": 42
+  },
+  "resultados_por_target": {
+    "matematicas": {
+      "RandomForestRegressor": {
+        "mae": 6.683172726115221,
+        "rmse": 8.692735472332085,
+        "r2": 0.1899709953821996,
+        "mae_std": 0.05175554884399385,
+        "rmse_std": 0.02946719235166603,
+        "mae_por_repeat": [
+          6.61,
+          6.714,
+          6.726
+        ]
+      },
+      "RandomForestProfundo": {
+        "mae": 6.713960370962543,
+        "rmse": 8.72572796811383,
+        "r2": 0.18379654213111887,
+        "mae_std": 0.06016560797083129,
+        "rmse_std": 0.04670056620799862,
+        "mae_por_repeat": [
+          6.632,
+          6.776,
+          6.734
+        ]
+      },
+      "ExtraTreesRegressor": {
+        "mae": 6.696896958175903,
+        "rmse": 8.70447617817135,
+        "r2": 0.18777684374521905,
+        "mae_std": 0.042781513983219305,
+        "rmse_std": 0.03601130275146948,
+        "mae_por_repeat": [
+          6.645,
+          6.749,
+          6.697
+        ]
+      },
+      "GradientBoostingRegressor": {
+        "mae": 7.087116971245134,
+        "rmse": 9.22328914790284,
+        "r2": 0.08805129151619884,
+        "mae_std": 0.017523567617782596,
+        "rmse_std": 0.05618091026145158,
+        "mae_por_repeat": [
+          7.074,
+          7.112,
+          7.075
+        ]
+      },
+      "Ridge": {
+        "mae": 7.021474808353524,
+        "rmse": 9.06814264314901,
+        "r2": 0.11846768240661572,
+        "mae_std": 0.04269894157630414,
+        "rmse_std": 0.05982335631069937,
+        "mae_por_repeat": [
+          6.999,
+          7.081,
+          6.984
+        ]
+      },
+      "DummyMedia": {
+        "mae": 7.5329937837488,
+        "rmse": 9.671354061550383,
+        "r2": -0.00266900415945992,
+        "mae_std": 0.006084588587094401,
+        "rmse_std": 0.008955876634683283,
+        "mae_por_repeat": [
+          7.54,
+          7.525,
+          7.534
+        ]
+      }
+    },
+    "lectura_critica": {
+      "RandomForestRegressor": {
+        "mae": 6.682324967794553,
+        "rmse": 8.336096996879341,
+        "r2": 0.18228314573595636,
+        "mae_std": 0.03674510820008238,
+        "rmse_std": 0.04082030126989529,
+        "mae_por_repeat": [
+          6.694,
+          6.72,
+          6.633
+        ]
+      },
+      "RandomForestProfundo": {
+        "mae": 6.693256206268863,
+        "rmse": 8.379702358189817,
+        "r2": 0.1736820670680083,
+        "mae_std": 0.054367278489158836,
+        "rmse_std": 0.06094958423187185,
+        "mae_por_repeat": [
+          6.692,
+          6.76,
+          6.627
+        ]
+      },
+      "ExtraTreesRegressor": {
+        "mae": 6.688666834656902,
+        "rmse": 8.326592420721399,
+        "r2": 0.18406969003516735,
+        "mae_std": 0.06071939485693142,
+        "rmse_std": 0.09061942399209708,
+        "mae_por_repeat": [
+          6.668,
+          6.771,
+          6.627
+        ]
+      },
+      "GradientBoostingRegressor": {
+        "mae": 6.889709620524869,
+        "rmse": 8.655604942384528,
+        "r2": 0.1182160596367116,
+        "mae_std": 0.08545452992838987,
+        "rmse_std": 0.13155719025097248,
+        "mae_por_repeat": [
+          6.988,
+          6.902,
+          6.78
+        ]
+      },
+      "Ridge": {
+        "mae": 6.872329727681913,
+        "rmse": 8.626862934065302,
+        "r2": 0.12420608575272185,
+        "mae_std": 0.03855704631135122,
+        "rmse_std": 0.07063041933155653,
+        "mae_por_repeat": [
+          6.818,
+          6.896,
+          6.903
+        ]
+      },
+      "DummyMedia": {
+        "mae": 7.44617226017807,
+        "rmse": 9.229767979586493,
+        "r2": -0.002419126777478612,
+        "mae_std": 0.007693829831204449,
+        "rmse_std": 0.012212239169147212,
+        "mae_por_repeat": [
+          7.457,
+          7.44,
+          7.441
+        ]
+      }
+    },
+    "ingles": {
+      "RandomForestRegressor": {
+        "mae": 8.57003175787805,
+        "rmse": 10.766597725544246,
+        "r2": 0.21323735264868257,
+        "mae_std": 0.045321013528361015,
+        "rmse_std": 0.0641840051910934,
+        "mae_por_repeat": [
+          8.514,
+          8.572,
+          8.625
+        ]
+      },
+      "RandomForestProfundo": {
+        "mae": 8.544985391469963,
+        "rmse": 10.760890695566317,
+        "r2": 0.2140358151996827,
+        "mae_std": 0.08812926228549532,
+        "rmse_std": 0.0965917518610702,
+        "mae_por_repeat": [
+          8.433,
+          8.554,
+          8.648
+        ]
+      },
+      "ExtraTreesRegressor": {
+        "mae": 8.576379572005372,
+        "rmse": 10.84810635535594,
+        "r2": 0.2012413449252114,
+        "mae_std": 0.09574628432692575,
+        "rmse_std": 0.09929272572164465,
+        "mae_por_repeat": [
+          8.459,
+          8.576,
+          8.694
+        ]
+      },
+      "GradientBoostingRegressor": {
+        "mae": 8.900620335826838,
+        "rmse": 11.43704194453136,
+        "r2": 0.11199203557947113,
+        "mae_std": 0.12048836998566469,
+        "rmse_std": 0.188620888157145,
+        "mae_por_repeat": [
+          8.73,
+          8.983,
+          8.989
+        ]
+      },
+      "Ridge": {
+        "mae": 8.83244692070356,
+        "rmse": 11.243174875521417,
+        "r2": 0.14199895043936275,
+        "mae_std": 0.07489178130746077,
+        "rmse_std": 0.10594636258289342,
+        "mae_por_repeat": [
+          8.727,
+          8.891,
+          8.879
+        ]
+      },
+      "DummyMedia": {
+        "mae": 9.76181852077062,
+        "rmse": 12.164296668648968,
+        "r2": -0.004260383368859255,
+        "mae_std": 0.0169742060701953,
+        "rmse_std": 0.01844218856826709,
+        "mae_por_repeat": [
+          9.745,
+          9.755,
+          9.785
+        ]
+      }
+    },
+    "global": {
+      "RandomForestRegressor": {
+        "mae": 17.354178604623886,
+        "rmse": 22.158519631044772,
+        "r2": 0.28494693361798157,
+        "mae_std": 0.08467096727114194,
+        "rmse_std": 0.017280383454047227,
+        "mae_por_repeat": [
+          17.459,
+          17.252,
+          17.351
+        ]
+      },
+      "RandomForestProfundo": {
+        "mae": 17.347088577479756,
+        "rmse": 22.113622912814993,
+        "r2": 0.28783141602851664,
+        "mae_std": 0.11938515685338011,
+        "rmse_std": 0.08547487018824984,
+        "mae_por_repeat": [
+          17.467,
+          17.184,
+          17.39
+        ]
+      },
+      "ExtraTreesRegressor": {
+        "mae": 17.26478603064948,
+        "rmse": 22.220644019448425,
+        "r2": 0.2809156820236225,
+        "mae_std": 0.05298723229916193,
+        "rmse_std": 0.10667913664214176,
+        "mae_por_repeat": [
+          17.278,
+          17.322,
+          17.194
+        ]
+      },
+      "GradientBoostingRegressor": {
+        "mae": 17.812057717187884,
+        "rmse": 22.776960473422374,
+        "r2": 0.24442594152870437,
+        "mae_std": 0.15950587521800436,
+        "rmse_std": 0.18605779893857072,
+        "mae_por_repeat": [
+          17.891,
+          17.59,
+          17.956
+        ]
+      },
+      "Ridge": {
+        "mae": 18.443955923443703,
+        "rmse": 23.642486496710845,
+        "r2": 0.18590900460756354,
+        "mae_std": 0.13455096330451582,
+        "rmse_std": 0.19692089438508334,
+        "mae_por_repeat": [
+          18.254,
+          18.546,
+          18.532
+        ]
+      },
+      "DummyMedia": {
+        "mae": 21.44001691236169,
+        "rmse": 26.228870114409215,
+        "r2": -0.001880185483840539,
+        "mae_std": 0.006331022895362793,
+        "rmse_std": 0.01249363565307667,
+        "mae_por_repeat": [
+          21.438,
+          21.433,
+          21.448
+        ]
+      }
+    }
+  },
+  "global_derivado_de_areas": {
+    "formula": {
+      "a": 1.0044831680055955,
+      "b": -0.6806179629000677
+    },
+    "mae": 17.160243945241547,
+    "rmse": 22.00002171453273,
+    "r2": 0.29514019896146027
+  },
+  "global_suma_simple_de_areas": {
+    "mae": 17.162028021597497,
+    "rmse": 22.000261406701732,
+    "r2": 0.2951248398589006
+  },
+  "global_formula_sobre_areas_reales": {
+    "a": 1.0000000000000004,
+    "b": -1.3674346673394674e-14,
+    "r2": 1.0,
+    "nota": "Control: debe dar 1.0 y 0.0 (el target ES la suma de las areas)."
+  },
+  "bandas_puntaje_global": {
+    "bajo_max": 155.0,
+    "medio_max": 184.0,
+    "criterio": "percentiles 30 y 70 de la distribucion de quienes presentaron"
+  },
+  "margen_error_global_mae": 17.26478603064948,
+  "modo_global": "suma_de_areas",
+  "diagnostico_residuos_por_edad": [
+    {
+      "rango_edad": "[0,22)",
+      "n": 216,
+      "mae_global": 16.584426333937497,
+      "residuo_medio": 2.8285344456428616,
+      "error_medio_pct": 0.06425537017266521
+    },
+    {
+      "rango_edad": "[22,25)",
+      "n": 127,
+      "mae_global": 16.73055635387054,
+      "residuo_medio": -3.1115550268161063,
+      "error_medio_pct": 3.715845282367589
+    },
+    {
+      "rango_edad": "[25,30)",
+      "n": 101,
+      "mae_global": 19.08730915000477,
+      "residuo_medio": -1.6827045681584056,
+      "error_medio_pct": 3.2281143288793843
+    },
+    {
+      "rango_edad": "[30,100)",
+      "n": 7,
+      "mae_global": 15.035002807024682,
+      "residuo_medio": -8.724676403387678,
+      "error_medio_pct": 6.69874126955206
+    }
+  ],
+  "edad_entrenamiento": {
+    "min": 16.0,
+    "max": 33.0
+  },
+  "nota_metodologica": "El target es el puntaje real del Saber 11 expresado en la escala del Saber Pro (suma de las tres areas, 0-300): el Saber 11 es el antecedente directo del Saber Pro, con los mismos tres dominios. No hay puntajes de Saber Pro en la cohorte porque el examen aun no se ha presentado: es una prediccion a futuro, y se supone que el desempeno en la prueba es transferible.",
+  "advertencias": [
+    "La muestra de entrenamiento (quienes presentaron el examen) tiene edad media 22.2 y rango [16, 33]; las predicciones para estudiantes fuera de ese rango son extrapolaciones.",
+    "El R2 del global es bajo: la trayectoria academica explica solo una parte del rendimiento en el examen. El modelo NO debe leerse como un pronostico determinista del puntaje.",
+    "El puntaje estimado es una expectativa; debe mostrarse con su margen de error.",
+    "La escala es la del Saber Pro (0-300): el global es la suma de las tres areas. La columna puntaje_global_saber11 del CSV esta en otra escala y NO se uso como target."
+  ]
+}

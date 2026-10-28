@@ -14,7 +14,11 @@
 # (porque el archivo esta en /ml-service/app/services/ y sube 4 niveles).
 # Por eso los volumenes se montan en /ml-training/ y /<nombre>, no en /app.
 
-FROM python:3.11-slim
+# Python 3.14: es el requisito minimo de numpy 2.5.4 / scipy 1.18.1 / shap
+# 0.53.0 (no publican wheels para 3.11) y coincide con la version del venv
+# local con la que se entreno y verifico el modelo v2. El .pkl se serializo
+# con scikit-learn 1.9.1: cambiar de version rompe el unpickle.
+FROM python:3.14-slim
 
 WORKDIR /ml-service
 

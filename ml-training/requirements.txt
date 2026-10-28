@@ -1,8 +1,29 @@
-# Dependencias para el pipeline ML con datos reales (Saber Pro)
-# Python 3.14+ compatible. Sin pines estrictos para que pip resuelva.
-scikit-learn>=1.6.0
-pandas>=2.2.0
-numpy>=2.0.0
-matplotlib>=3.10.0
-psycopg2-binary>=2.9.10
-joblib>=1.4.0
+# Dependencias del pipeline de entrenamiento (solo se ejecuta bajo demanda).
+#
+# IMPORTANTE — los pines deben coincidir con los de `ml-service/requirements.txt`.
+# Este contenedor produce `trained_models/saberpro_model_v2.pkl` y el ml-service
+# lo carga: si el entrenamiento y el servicio usan versiones distintas de
+# scikit-learn o numpy, el `.pkl` serializado aqui no se puede unpicklear
+# alli (train/serve skew).
+#
+# Python: >= 3.12 (numpy 2.5.4 y scipy 1.18.1 no publican wheels para 3.11).
+# El Dockerfile usa python:3.14-slim, la misma version del venv local.
+#
+# Versiones verificadas contra ml-service/.venv:
+#   python 3.14.3 · scikit-learn 1.9.1 · numpy 2.5.4 · pandas 3.0.6
+#   scipy 1.18.1 · matplotlib 3.11.2
+
+# Machine Learning (mismas versiones que sirven el modelo)
+scikit-learn==1.9.1
+joblib==1.6.0
+scipy==1.18.1
+
+# Manipulacion de datos
+pandas==3.0.6
+numpy==2.5.4
+
+# Graficos del analisis (analyze_results.py)
+matplotlib==3.11.2
+
+# Base de datos (el pipeline lee dataset_saber_pro_real y escribe el modelo)
+psycopg2-binary==2.9.13

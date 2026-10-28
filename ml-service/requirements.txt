@@ -1,35 +1,56 @@
-# FastAPI y servidor
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
+# Dependencias del ml-service (FastAPI que sirve el modelo ML real).
+#
+# IMPORTANTE — los pines NO son negociables: el artefacto
+# `ml-training/trained_models/saberpro_model_v2.pkl` fue serializado con
+# scikit-learn 1.9.1 / numpy 2.5.4. Unpicklearlo con otra version de
+# scikit-learn falla (cambio en el estado interno de los estimadores), asi
+# que estas versiones deben coincidir EXACTAMENTE con las del entorno que
+# entreno el modelo.
+#
+# Python: >= 3.12 (numpy 2.5.4, scipy 1.18.1 y shap 0.53.0 no publican
+# wheels para 3.11). El Dockerfile usa python:3.14-slim, la misma version del
+# venv local con el que se entreno y verifico el modelo.
+#
+# Versiones verificadas contra el venv local (ml-service/.venv):
+#   python 3.14.3 · scikit-learn 1.9.1 · numpy 2.5.4 · pandas 3.0.6
+#   scipy 1.18.1 · shap 0.53.0 · fastapi 0.143.1
 
-# Validación y serialización
-pydantic==2.5.0
+# FastAPI y servidor
+fastapi==0.143.1
+uvicorn[standard]==0.54.0
+
+# Validacion y serializacion
+pydantic==2.14.1
 
 # Variables de entorno
-python-dotenv==1.0.0
+python-dotenv==1.2.4
 
 # Base de datos PostgreSQL
-psycopg2-binary==2.9.9
-sqlalchemy==2.0.25
+psycopg2-binary==2.9.13
+sqlalchemy==2.1.4
 
 # Machine Learning
-scikit-learn==1.4.0
-joblib==1.3.2
-# Explicabilidad por prediccion (SHAP TreeExplainer sobre GradientBoostingClassifier).
-# Pin exacto para evitar cambios de shape entre versiones (0.45+ usa 3D array).
-shap==0.46.0
+# scikit-learn debe coincidir con el que serializo el .pkl (1.9.1).
+scikit-learn==1.9.1
+joblib==1.6.0
+# Explicabilidad por prediccion: SHAP TreeExplainer sobre los regresores
+# (RandomForest/ExtraTrees) del modelo v2. No se usa GradientBoostingClassifier
+# (ese era el modelo v1, ya retirado).
+shap==0.53.0
+# scipy es dependencia de scikit-learn, pero se fija de forma explicita para
+# que no derive a una version incompatible con numpy 2.5.4.
+scipy==1.18.1
 
-# Manipulación de datos
-pandas==2.2.0
-numpy==1.26.0
+# Manipulacion de datos
+pandas==3.0.6
+numpy==2.5.4
 
 # Utilidades HTTP
-python-multipart==0.0.6
+python-multipart==0.0.32
 
 # Testing
-pytest==7.4.4
-pytest-asyncio==0.23.3
+pytest==9.1.1
 
-# Autenticación JWT
-pyjwt==2.8.0
+# Autenticacion JWT
+pyjwt==2.15.1
 passlib[bcrypt]==1.7.4

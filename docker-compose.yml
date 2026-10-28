@@ -87,6 +87,13 @@ services:
     volumes:
       # Hot-reload: editar archivos en ./backend/src reinicia el servidor.
       - ./backend/src:/app/src
+      # El panel "Analisis del modelo" lee del disco las metricas del
+      # entrenamiento y los graficos. Dentro del contenedor la ruta se
+      # resuelve como /ml-training/... (el codigo sube dos niveles desde
+      # /app/src), asi que hay que montar esas carpetas: sin ellas el
+      # endpoint responde 404 y el panel aparece vacio en produccion.
+      - ./ml-training/models:/ml-training/models:ro
+      - ./ml-training/analysis:/ml-training/analysis:ro
 
   # ---------------------------------------------------------------------------
   # Frontend Vite (puerto 5173)
@@ -155,10 +162,16 @@ services:
   # ---------------------------------------------------------------------------
   init-data:
     profiles: ["init"]
-    image: python:3.11-slim
+    image: python:3.14-slim
     container_name: saberpro-init-data
     working_dir: /scripts
-    command: ["python", "scripts/cargar_dataset.py"]
+    # `cargar_dataset.py` solo necesita el driver de PostgreSQL (el resto es
+    # stdlib: csv, argparse, re). La imagen base no trae psycopg2, asi que se
+    # instala en el arranque. Version pineada a la del resto del proyecto.
+    command:
+      - sh
+      - -c
+      - pip install --no-cache-dir psycopg2-binary==2.9.13 && python scripts/cargar_dataset.py
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"

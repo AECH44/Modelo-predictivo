@@ -1240,63 +1240,248 @@ router.get('/admin/users/:id/audit', requireAuth, requireAdmin, async (req, res)
 
 // =====================================================================
 // ANALISIS DEL MODELO ML (solo administrador)
-// Sirven el JSON de metricas, stats del dataset y proxy al predictor
-// FastAPI para que la UI pruebe el modelo desde el panel admin.
+// Sirven las metricas del modelo v2 (saberpro-v2), las stats del dataset
+// y un proxy al predictor FastAPI para que la UI pruebe el modelo.
 // =====================================================================
 
-// Lee el archivo desercion_metrics.json que produce ml/train_from_real.py.
-function loadMetricsJson() {
-  // El script Python guarda el JSON en ml-training/models/.
-  // Subimos desde backend/src/ hasta el root del repo.
+// Metricas del modelo entrenado.
+//
+// El script ml-training/train_saberpro_v2.py las guarda en
+// ml-training/models/saberpro_v2_metrics.json.
+//
+// La ruta se resuelve igual en el host y en el contenedor:
+//   host:       backend/src -> <repo>/ml-training/models
+//   contenedor: /app/src     -> /ml-training/models   (volumen en compose)
+// Sin ese volumen montado, este endpoint responde 404 y el panel
+// "Analisis del modelo" aparece vacio en produccion.
+function readTrainingMetrics() {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const candidates = [
-    path.join(here, '..', '..', 'ml-training', 'models', 'desercion_metrics.json'),
+    path.join(here, '..', '..', 'ml-training', 'models', 'saberpro_v2_metrics.json'),
   ]
   for (const p of candidates) {
     try {
-      return JSON.parse(fs.readFileSync(p, 'utf-8'))
-    } catch {}
+      return { raw: JSON.parse(fs.readFileSync(p, 'utf-8')), path: p }
+    } catch {
+      // siguiente candidato
+    }
   }
   return null
+}
+
+// Etiquetas legibles de las tres areas del Saber Pro.
+const AREA_LABELS = {
+  matematicas: 'Matematicas',
+  lectura_critica: 'Lectura critica',
+  ingles: 'Ingles',
+}
+
+// Cortes de banda por defecto (percentiles 30 y 70 de la cohorte). Se usan
+// solo como respaldo si no se puede leer el JSON de metricas.
+const DEFAULT_BANDS = { bajo_max: 155, medio_max: 184 }
+
+function round(value, digits = 4) {
+  const n = Number(value)
+  return Number.isFinite(n) ? Number(n.toFixed(digits)) : null
+}
+
+// Normaliza el JSON crudo del entrenamiento a la forma que consume el
+// panel. Se hace aqui para que la UI no dependa de la estructura interna
+// del artefacto.
+function normalizeTrainingMetrics(raw) {
+  const porTarget = raw.resultados_por_target || {}
+  const globalDirecto = porTarget.global || {}
+
+  // Comparativa de modelos de REGRESION sobre el global. El ganador es el
+  // de menor MAE (en el v1 esto era accuracy de un clasificador).
+  const comparativa = Object.entries(globalDirecto)
+    .map(([modelo, m]) => ({
+      modelo,
+      mae: round(m.mae, 3),
+      rmse: round(m.rmse, 3),
+      r2: round(m.r2, 4),
+    }))
+    .sort((a, b) => a.mae - b.mae)
+  if (comparativa.length) comparativa[0].es_mejor = true
+  const baseline = comparativa.find((c) => c.modelo === 'DummyMedia') || null
+
+  // Metricas por area: el mejor modelo de cada area y suDummyMedia.
+  const areas = Object.keys(AREA_LABELS)
+    .filter((clave) => porTarget[clave])
+    .map((clave) => {
+      const candidatos = porTarget[clave]
+      const mejor = Object.entries(candidatos)
+        .map(([modelo, m]) => ({ modelo, mae: m.mae }))
+        .sort((a, b) => a.mae - b.mae)[0]
+      const elegido = candidatos[mejor.modelo]
+      const base = candidatos.DummyMedia
+      return {
+        clave,
+        nombre: AREA_LABELS[clave],
+        modelo: mejor.modelo,
+        mae: round(elegido.mae, 3),
+        rmse: round(elegido.rmse, 3),
+        r2: round(elegido.r2, 4),
+        baseline_mae: base ? round(base.mae, 3) : null,
+      }
+    })
+
+  // El modelo SERVIDO no es un modelo global: es la suma de las tres
+  // areas predichas. Sus metricas vienen en `global_derivado_de_areas`.
+  const derivado = raw.global_derivado_de_areas || {}
+  const muestra = raw.muestra || {}
+  const bandas = raw.bandas_puntaje_global || raw.bandas || {}
+
+  return {
+    model_version: raw.model_version || 'saberpro-v2',
+    tipo: raw.tipo || 'regresion',
+    objetivo: {
+      global: raw.target?.global || '',
+      escala: raw.target?.escala || '',
+      filtro: raw.target?.filtro || '',
+      areas: Object.entries(AREA_LABELS).map(([clave, nombre]) => ({
+        clave,
+        nombre,
+        columna_csv: raw.target?.areas?.[clave] || null,
+      })),
+    },
+    muestra: {
+      filas_dataset: muestra.filas_totales ?? null,
+      con_areas_completas: muestra.con_las_3_areas ?? null,
+      sin_areas_completas: muestra.sin_areas_completas ?? null,
+      con_historial: muestra.con_historial_academico ?? null,
+      excluidas_sin_historial: muestra.excluidas_sin_historial ?? null,
+      entrenadas:
+        (muestra.con_las_3_areas ?? 0) - (muestra.excluidas_sin_historial ?? 0),
+    },
+    global: {
+      modelo: 'Suma de las tres areas (3 regresores)',
+      mae: round(derivado.mae, 3),
+      rmse: round(derivado.rmse, 3),
+      r2: round(derivado.r2, 4),
+      baseline_mae: baseline?.mae ?? null,
+      baseline_rmse: baseline?.rmse ?? null,
+      baseline_r2: baseline?.r2 ?? null,
+      margen_error: round(raw.margen_error_global_mae ?? raw.margen_error_global, 2),
+    },
+    areas,
+    comparativa,
+    bandas: {
+      bajo_max: bandas.bajo_max ?? DEFAULT_BANDS.bajo_max,
+      medio_max: bandas.medio_max ?? DEFAULT_BANDS.medio_max,
+      criterio: bandas.criterio || '',
+    },
+    features: {
+      numeric: raw.features?.numeric || [],
+      categorical: raw.features?.categorical || [],
+      total:
+        (raw.features?.numeric?.length || 0) +
+        (raw.features?.categorical?.length || 0),
+    },
+    advertencias: raw.advertencias || [],
+    nota_metodologica: raw.nota_metodologica || '',
+    diagnostico_edad: raw.diagnostico_residuos_por_edad || [],
+  }
+}
+
+// Cortes de banda effective (del JSON de metricas si esta disponible).
+function trainingBands() {
+  const found = readTrainingMetrics()
+  if (!found) return { ...DEFAULT_BANDS }
+  const bandas = found.raw.bandas_puntaje_global || found.raw.bandas || {}
+  return {
+    bajo_max: bandas.bajo_max ?? DEFAULT_BANDS.bajo_max,
+    medio_max: bandas.medio_max ?? DEFAULT_BANDS.medio_max,
+  }
 }
 
 const FASTAPI_URL = process.env.FASTAPI_URL || 'http://127.0.0.1:8000'
 
 router.get('/analysis/metrics', requireAuth, requireAdmin, async (_req, res) => {
-  const metrics = loadMetricsJson()
-  if (!metrics) {
+  const found = readTrainingMetrics()
+  if (!found) {
     return res.status(404).json({
       ok: false,
-      message: 'No se encontro desercion_metrics.json. Corre ml/train_from_real.py.',
+      message:
+        'No se encontro saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
     })
   }
-  return res.json({ ok: true, metrics })
+  return res.json({ ok: true, metrics: normalizeTrainingMetrics(found.raw) })
 })
 
 router.get('/analysis/dataset-stats', requireAuth, requireAdmin, async (_req, res) => {
   try {
-    // Distribucion de target derivado de promedio_acumulado (mismo criterio
-    // que usa train_from_real.py).
+    // Criterio del modelo v2: las TRES areas del examen con dato (> 0) y
+    // ademas historial academico (promedio_acumulado > 0).
     const totalQ = await pool.query('SELECT COUNT(*)::int AS n FROM dataset_saber_pro_real')
-    const validQ = await pool.query(`
-      SELECT
-        COUNT(*) FILTER (WHERE promedio_acumulado IS NOT NULL AND promedio_acumulado > 0)::int AS used,
-        COUNT(*) FILTER (WHERE promedio_acumulado = 0 OR promedio_acumulado IS NULL)::int AS excluded,
-        COUNT(*) FILTER (WHERE promedio_acumulado > 0 AND promedio_acumulado < 3.0)::int AS bajo,
-        COUNT(*) FILTER (WHERE promedio_acumulado >= 3.0 AND promedio_acumulado < 4.0)::int AS medio,
-        COUNT(*) FILTER (WHERE promedio_acumulado >= 4.0)::int AS alto
-      FROM dataset_saber_pro_real
-    `)
+    const { bajo_max, medio_max } = trainingBands()
+
+    const usableQ = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (
+           WHERE puntaje_matematicas_saber11 > 0
+             AND puntaje_lectura_critica_saber11 > 0
+             AND puntaje_ingles_saber11 > 0
+         )::int AS con_areas,
+         COUNT(*) FILTER (
+           WHERE puntaje_matematicas_saber11 > 0
+             AND puntaje_lectura_critica_saber11 > 0
+             AND puntaje_ingles_saber11 > 0
+             AND promedio_acumulado > 0
+         )::int AS entrenadas
+       FROM dataset_saber_pro_real`,
+    )
+
+    // Distribucion OBSERVADA por banda: el target real del modelo es la
+    // suma de las tres areas (escala 0-300), no una banda del GPA.
+    const observadoQ = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE suma < $1)::int AS bajo,
+         COUNT(*) FILTER (WHERE suma >= $1 AND suma < $2)::int AS medio,
+         COUNT(*) FILTER (WHERE suma >= $2)::int AS alto
+       FROM (
+         SELECT (puntaje_matematicas_saber11 + puntaje_lectura_critica_saber11
+                + puntaje_ingles_saber11) AS suma
+           FROM dataset_saber_pro_real
+          WHERE puntaje_matematicas_saber11 > 0
+            AND puntaje_lectura_critica_saber11 > 0
+            AND puntaje_ingles_saber11 > 0
+            AND promedio_acumulado > 0
+       ) t`,
+      [bajo_max, medio_max],
+    )
+
+    // Distribucion PREDICHA en la cohorte: la banda que el modelo asigno a
+    // cada estudiante evaluado.
+    const predichoQ = await pool.query(
+      `SELECT clase, COUNT(*)::int AS n FROM predictions GROUP BY clase`,
+    )
+    const predicho = { Bajo: 0, Medio: 0, Alto: 0 }
+    for (const row of predichoQ.rows) {
+      const clave = String(row.clase || '').toLowerCase()
+      if (clave === 'bajo') predicho.Bajo = row.n
+      else if (clave === 'medio') predicho.Medio = row.n
+      else if (clave === 'alto') predicho.Alto = row.n
+    }
+
+    const entrenadas = usableQ.rows[0].entrenadas || 0
+    const observadas = observadoQ.rows[0]
+
     return res.json({
       ok: true,
       total: totalQ.rows[0].n,
+      rows_used: entrenadas,
+      rows_excluded: totalQ.rows[0].n - entrenadas,
+      con_areas_completas: usableQ.rows[0].con_areas,
+      // Distribucion por banda del target real (en la muestra de entrenamiento).
       target_distribution: {
-        Bajo: validQ.rows[0].bajo,
-        Medio: validQ.rows[0].medio,
-        Alto: validQ.rows[0].alto,
+        Bajo: observadas.bajo,
+        Medio: observadas.medio,
+        Alto: observadas.alto,
       },
-      rows_used: validQ.rows[0].used,
-      rows_excluded: validQ.rows[0].excluded,
+      // Distribucion por banda de lo que predijo el modelo en la cohorte.
+      predicted_distribution: predicho,
+      bands: { bajo_max, medio_max },
     })
   } catch (err) {
     console.error('[analysis/dataset-stats] error:', err)
@@ -1382,11 +1567,25 @@ router.get('/analysis/data-quality', requireAuth, requireAdmin, async (_req, res
       for (const row of r.rows) categoricals[col][row.bucket] = row.n
     }
 
-    // Totales derivados (alineados con analysis/dataset-stats).
+    // Totales derivados (mismo criterio que analysis/dataset-stats: las tres
+    // areas del examen con dato + historial academico).
     const validQ = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE promedio_acumulado IS NOT NULL AND promedio_acumulado > 0)::int AS used,
-        COUNT(*) FILTER (WHERE promedio_acumulado = 0 OR promedio_acumulado IS NULL)::int AS excluded
+        COUNT(*) FILTER (
+          WHERE puntaje_matematicas_saber11 > 0
+            AND puntaje_lectura_critica_saber11 > 0
+            AND puntaje_ingles_saber11 > 0
+            AND promedio_acumulado > 0
+        )::int AS used,
+        COUNT(*) FILTER (
+          WHERE NOT COALESCE(
+            puntaje_matematicas_saber11 > 0
+            AND puntaje_lectura_critica_saber11 > 0
+            AND puntaje_ingles_saber11 > 0
+            AND promedio_acumulado > 0,
+            false
+          )
+        )::int AS excluded
       FROM dataset_saber_pro_real
     `)
 
@@ -1419,31 +1618,48 @@ function csvRow(cells) {
 }
 
 // GET /api/analysis/export/metrics.csv
-// Devuelve las metricas de los 2 modelos (LR, GB) en CSV: 2 filas x 7 columnas.
+// Exporta las metricas del modelo v2 en CSV: la comparativa de regresores
+// sobre el global, las metricas por area y la fila del modelo servido.
 // Pensado para que el jurado / tutor se lleve el resumen a Excel.
 router.get('/analysis/export/metrics.csv', requireAuth, requireAdmin, async (_req, res) => {
-  const metrics = loadMetricsJson()
-  if (!metrics) {
+  const found = readTrainingMetrics()
+  if (!found) {
     return res.status(404).json({
       ok: false,
-      message: 'No se encontro desercion_metrics.json. Corre ml/train_from_real.py.',
+      message:
+        'No se encontro saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
     })
   }
+  const metrics = normalizeTrainingMetrics(found.raw)
+
   const header = [
-    'model', 'accuracy', 'precision_weighted', 'recall_weighted',
-    'f1_weighted', 'roc_auc_ovr_weighted', 'is_best',
+    'ambito', 'modelo', 'mae', 'rmse', 'r2', 'es_mejor',
   ]
   const lines = [csvRow(header)]
-  for (const [name, m] of Object.entries(metrics.all_models || {})) {
+
+  // 1) Modelo servido: suma de las tres areas.
+  lines.push(csvRow([
+    'global_servido',
+    metrics.global.modelo,
+    metrics.global.mae,
+    metrics.global.rmse,
+    metrics.global.r2,
+    '1',
+  ]))
+  // 2) Comparativa de regresores entrenados directamente sobre el global.
+  for (const m of metrics.comparativa) {
     lines.push(csvRow([
-      name,
-      m.accuracy?.toFixed?.(6) ?? '',
-      m.precision_weighted?.toFixed?.(6) ?? '',
-      m.recall_weighted?.toFixed?.(6) ?? '',
-      m.f1_weighted?.toFixed?.(6) ?? '',
-      m.roc_auc_ovr_weighted?.toFixed?.(6) ?? '',
-      name === metrics.best_model ? '1' : '0',
+      'global_comparativa',
+      m.modelo,
+      m.mae,
+      m.rmse,
+      m.r2,
+      m.es_mejor ? '1' : '0',
     ]))
+  }
+  // 3) Metricas por area.
+  for (const a of metrics.areas) {
+    lines.push(csvRow([a.clave, a.modelo, a.mae, a.rmse, a.r2, '']))
   }
   // Audit log: registrar exportacion (trazabilidad institucional).
   insertAuditLog(pool, {

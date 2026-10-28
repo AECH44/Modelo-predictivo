@@ -13,9 +13,21 @@ dist/
 build/
 */dist/
 */build/
-ml-training/analysis/*.png
-ml-training/models/
+
+# ---------- Artefactos del modelo ----------
+# Los .pkl de los modelos son binarios pesados y se regeneran con
+# `docker compose --profile train run --rm ml-training`; NO se versionan.
+# (ml-training/data/ SI se versiona: el background sample lo necesita el
+# servicio ml-service para el SHAP.)
 ml-training/trained_models/
+
+# Las metricas del entrenamiento y los graficos del analisis SI se versionan:
+# el panel "Analisis del modelo" del administrador los lee del disco, y si
+# no viajan en el repositorio el panel aparece vacio en produccion.
+# Solo se versionan los graficos del modelo v2 (los del v1 quedaron obsoletos:
+# eran de un clasificador de bandas y el modelo actual es una regresion).
+ml-training/analysis/*.png
+!ml-training/analysis/v2_*.png
 
 # ---------- Logs ----------
 *.log
