@@ -19,7 +19,7 @@ joblib==1.6.0
 scipy==1.18.1
 
 # Manipulacion de datos
-pandas==3.0.6
+pandas==3.1.0
 numpy==2.5.4
 
 # Graficos del analisis (analyze_results.py)
