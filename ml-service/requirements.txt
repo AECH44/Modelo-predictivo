@@ -16,7 +16,7 @@
 #   scipy 1.18.1 · shap 0.53.0 · fastapi 0.143.1
 
 # FastAPI y servidor
-fastapi==0.143.1
+fastapi==0.162.0
 uvicorn[standard]==0.54.0
 
 # Validacion y serializacion
@@ -27,7 +27,7 @@ python-dotenv==1.2.4
 
 # Base de datos PostgreSQL
 psycopg2-binary==2.9.13
-sqlalchemy==2.1.4
+sqlalchemy==2.1.6
 
 # Machine Learning
 # scikit-learn debe coincidir con el que serializo el .pkl (1.9.1).
@@ -36,13 +36,13 @@ joblib==1.6.0
 # Explicabilidad por prediccion: SHAP TreeExplainer sobre los regresores
 # (RandomForest/ExtraTrees) del modelo v2. No se usa GradientBoostingClassifier
 # (ese era el modelo v1, ya retirado).
-shap==0.53.0
+shap==0.54.1
 # scipy es dependencia de scikit-learn, pero se fija de forma explicita para
 # que no derive a una version incompatible con numpy 2.5.4.
 scipy==1.18.1
 
 # Manipulacion de datos
-pandas==3.0.6
+pandas==3.1.0
 numpy==2.5.4
 
 # Utilidades HTTP
