@@ -204,7 +204,7 @@ Motivos de rechazo posibles:
 | `sin correo` | El registro no trae correo. |
 | `correo con formato invalido: X` | El correo no tiene forma de correo valido. |
 | `el correo ya pertenece a otro documento` | Ese correo ya esta en uso por otra persona. |
-| `el documento ya pertenece a una cuenta institucional (rol X)` | El documento es de un rector, decano o administrador: la ingesta no toca esas cuentas. |
+| `el documento ya pertenece a una cuenta institucional (rol X)` | El documento es de un coordinador, decano o administrador: la ingesta no toca esas cuentas. |
 | `documento duplicado en el mismo payload` | El documento aparecio dos veces en el mismo envio. |
 | `correo duplicado en el mismo payload` | El correo aparecio dos veces en el mismo envio. |
 
@@ -245,7 +245,7 @@ SELECT * FROM sp_consultar_estudiantes(p_programa => 'all', p_limite => 50);
 - **El correo es la clave de acceso del estudiante** y es unico. Si un correo
   ya pertenece a otro documento, el registro se rechaza.
 - **Las cuentas institucionales estan protegidas.** Si el documento recibido
-  ya pertenece a una cuenta que no es de estudiante (rector, decano,
+  ya pertenece a una cuenta que no es de estudiante (coordinador, decano,
   administrador), el registro se rechaza con el motivo
   `el documento ya pertenece a una cuenta institucional (rol ...)`. La ingesta
   **nunca** reescribe una cuenta institucional.

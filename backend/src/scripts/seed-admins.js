@@ -1,8 +1,11 @@
 /**
  * Asegura en BD las cuentas administrativas del proyecto:
- *   - Rector:        documento 91497570  rectoria@unac.edu.co           role=rector
- *   - Decano:        documento 91475722  facultad.ingenieria@unac.edu.co role=decano
- *   - Administrador: documento 99000001  admin.saberpro@unac.edu.co     role=administrador (pwd custom)
+ *   - Coordinador/a:  documento 1098804461 coordinacion.ingenieria@unac.edu.co role=coordinador (pwd custom)
+ *   - Decano:         documento 91475722  facultad.ingenieria@unac.edu.co role=decano
+ *   - Administrador:  documento 99000001  admin.saberpro@unac.edu.co     role=administrador (pwd custom)
+ *
+ * El panel institucional que antes era de "Rector" es ahora el del
+ * Coordinating del programa (CONDE VEGA EDNA KATHERINE).
  *
  * Adicionalmente, demueve al estudiante MESA ESCOBAR JHAN CARLOS
  * (jhanc.mesae@unac.edu.co / doc 1001417605) desde administrador a
@@ -14,8 +17,8 @@
  *     rol, program y password_hash.
  *   - Si no existe, lo crea.
  *   - Las cuentas administrativas usan como password el documento
- *     (politica institucional), salvo el admin custom que tiene su propia
- *     contrasena.
+ *     (politica institucional), salvo las que tienen contrasena propia
+ *     (admin y coordinador).
  *
  * Idempotente: se puede correr cuantas veces se quiera.
  *
@@ -26,14 +29,16 @@ import { pool, testConnection } from '../db.js'
 import { hashPassword } from '../auth.js'
 
 const NEW_ADMIN_PASSWORD = 'SaberPro_Admin_2026!'
+const NEW_COORDINADOR_PASSWORD = 'Coordinador_2026!'
 
 const ADMINS = [
   {
-    role: 'rector',
-    documento: '91497570',
-    username: 'PEÑUELA PINEDA JAHISBER',
-    email: 'rectoria@unac.edu.co',
+    role: 'coordinador',
+    documento: '1098804461',
+    username: 'CONDE VEGA EDNA KATHERINE',
+    email: 'coordinacion.ingenieria@unac.edu.co',
     program: 'all',
+    customPassword: NEW_COORDINADOR_PASSWORD,
   },
   {
     role: 'decano',

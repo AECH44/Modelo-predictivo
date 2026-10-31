@@ -275,7 +275,7 @@ async function main() {
   if (errors.length) {
     console.log(`\n  Detalles (${errors.length}):`)
     errors.slice(0, 30).forEach((e) => console.log('    - ' + e))
-    if (errors.length > 30) console.log(`    ... y ${errors.length - 30} mas`)
+    if (errors.length > 30) console.log(`    ... y ${errors.length - 30} más`)
   }
 
   if (credenciales.length && !dryRun) {

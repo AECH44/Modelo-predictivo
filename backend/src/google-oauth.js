@@ -41,7 +41,7 @@ function getOAuthClient() {
 // Construye la URL a la que el frontend debe redirigir al usuario.
 export function buildGoogleAuthUrl(returnTo = '/inicio') {
   if (!isGoogleOAuthConfigured()) {
-    throw new Error('Google OAuth no esta configurado (faltan GOOGLE_CLIENT_ID/SECRET)')
+    throw new Error('Google OAuth no está configurado (faltan GOOGLE_CLIENT_ID/SECRET)')
   }
   pruneExpiredStates()
   const state = randomUUID()
@@ -61,7 +61,7 @@ export function buildGoogleAuthUrl(returnTo = '/inicio') {
 // Intercambia el `code` por los tokens y devuelve los datos del usuario.
 export async function exchangeCodeForProfile(code, state) {
   if (!isGoogleOAuthConfigured()) {
-    throw new Error('Google OAuth no esta configurado')
+    throw new Error('Google OAuth no está configurado')
   }
   pruneExpiredStates()
   const stored = state ? stateStore.get(state) : null
@@ -69,13 +69,13 @@ export async function exchangeCodeForProfile(code, state) {
   if (state) stateStore.delete(state)
 
   if (!state || !stored) {
-    throw new Error('Estado OAuth invalido o expirado. Intenta de nuevo.')
+    throw new Error('Estado OAuth inválido o expirado. Intenta de nuevo.')
   }
 
   const client = getOAuthClient()
   const { tokens } = await client.getToken(code)
   if (!tokens.access_token) {
-    throw new Error('Google no devolvio un token de acceso.')
+    throw new Error('Google no devolvió un token de acceso.')
   }
   client.setCredentials(tokens)
 
@@ -89,7 +89,7 @@ export async function exchangeCodeForProfile(code, state) {
   const email = profile.email.trim().toLowerCase()
   if (!email.endsWith(INSTITUTIONAL_DOMAIN)) {
     throw new Error(
-      `Solo se permite el ingreso con correo institucional ${INSTITUTIONAL_DOMAIN}. Tu cuenta de Google devolvio ${email}.`
+      `Solo se permite el ingreso con correo institucional ${INSTITUTIONAL_DOMAIN}. Tu cuenta de Google devolvió ${email}.`
     )
   }
 

@@ -34,3 +34,14 @@ CREATE TABLE IF NOT EXISTS usuarios (
 CREATE INDEX IF NOT EXISTS idx_usuarios_role    ON usuarios(role);
 CREATE INDEX IF NOT EXISTS idx_usuarios_program ON usuarios(program);
 CREATE INDEX IF NOT EXISTS idx_usuarios_active  ON usuarios(is_active);
+
+-- El rol debe ser uno de los perfiles del sistema. El panel institucional
+-- es el del coordinador de programa (antes "rector").
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usuarios_role_check') THEN
+        ALTER TABLE usuarios ADD CONSTRAINT usuarios_role_check
+            CHECK (role IN ('coordinador', 'decano', 'profesor', 'administrador', 'estudiante'));
+    END IF;
+END
+$$;

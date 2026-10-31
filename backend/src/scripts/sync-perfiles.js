@@ -244,9 +244,9 @@ async function main() {
   console.log(`  Perfiles actualizados: ${actualizados}`)
   console.log(`  Usuarios creados:      ${creados}`)
   console.log(`  Sin cambios:           ${sinCambio}`)
-  console.log(`  Filas invalidas:       ${invalidas}`)
+  console.log(`  Filas inválidas:       ${invalidas}`)
   if (recompute) {
-    console.log(`  Con prediccion nueva:  ${conPrediccion}`)
+    console.log(`  Con predicción nueva:  ${conPrediccion}`)
     console.log(`  Sin datos suficientes: ${sinDatos}`)
   }
 

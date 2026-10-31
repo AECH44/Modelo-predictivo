@@ -245,6 +245,10 @@ $$;
 
 -- Nivel de ingles: acepta la escala 1-7 del export actual o el nivel
 -- MCER ya listo (A1..C2). El 0 significa "sin dato" (no es A1).
+--
+-- La escala 1-7 del export NO es MCER: 1-2 es A1, 3-5 es A2 y 6-7 es B1
+-- (no "C2", como se mapeaba antes). Por encima de 7 se usa la banda C
+-- (8 -> C1, 9 o mas -> C2).
 CREATE OR REPLACE FUNCTION fn_ingesta_ingles(p_datos jsonb, p_campo text)
 RETURNS varchar(4)
 LANGUAGE sql STABLE AS $$
@@ -253,10 +257,14 @@ LANGUAGE sql STABLE AS $$
     WHEN upper(fn_ingesta_texto(p_datos, p_campo)) IN ('A1','A2','B1','B2','C1','C2')
       THEN upper(fn_ingesta_texto(p_datos, p_campo))
     WHEN fn_ingesta_texto(p_datos, p_campo) ~ '^[0-9]+$'
-      THEN CASE fn_ingesta_texto(p_datos, p_campo)::int
-        WHEN 1 THEN 'A1' WHEN 2 THEN 'A2' WHEN 3 THEN 'B1'
-        WHEN 4 THEN 'B2' WHEN 5 THEN 'C1' WHEN 6 THEN 'C2' WHEN 7 THEN 'C2'
-        ELSE NULL END
+      THEN CASE
+        WHEN fn_ingesta_texto(p_datos, p_campo)::int IN (1, 2)   THEN 'A1'
+        WHEN fn_ingesta_texto(p_datos, p_campo)::int IN (3, 4, 5) THEN 'A2'
+        WHEN fn_ingesta_texto(p_datos, p_campo)::int IN (6, 7)   THEN 'B1'
+        WHEN fn_ingesta_texto(p_datos, p_campo)::int = 8         THEN 'C1'
+        WHEN fn_ingesta_texto(p_datos, p_campo)::int >= 9        THEN 'C2'
+        ELSE NULL
+      END
     ELSE NULL
   END
 $$;
@@ -455,7 +463,7 @@ BEGIN
        AND lower(u.email) = t.correo
        AND u.documento <> t.identificacion;
 
-    -- Una cuenta institucional (rector, decano, administrador) NO se puede
+    -- Una cuenta institucional (coordinador, decano, administrador) NO se puede
     -- tomar por un estudiante. Si el documento ya existe con un rol distinto
     -- de 'estudiante', el registro se rechaza: de lo contrario el ON CONFLICT
     -- de la seccion 3.2 reescribiria el correo de un administrador y el
@@ -531,7 +539,7 @@ BEGIN
                 -- Defensa en profundidad: aunque la validacion de la seccion
                 -- 3.1 ya rechaza los documentos que pertenecen a una cuenta
                 -- institucional, aqui solo se actualizan filas que son
-                -- estudiantes. Una cuenta de rector, decano o administrador
+                -- estudiantes. Una cuenta de coordinador, decano o administrador
                 -- jamas se reescribe desde la ingesta.
                 WHERE usuarios.role = 'estudiante'
             RETURNING (xmax = 0) AS fue_insertado

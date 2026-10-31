@@ -143,16 +143,16 @@ function mlResponseToContract(mlResp, profile) {
   const factores = [
     { label: 'Promedio acumulado', impact: tone(num(profile.promedio_acumulado, 3), 4.0, 3.0),
       value: num(profile.promedio_acumulado, 3).toFixed(2) },
-    { label: 'Promedio ingenieria', impact: tone(num(profile.promedio_ingenieria, 3), 4.0, 3.0),
+    { label: 'Promedio ingeniería', impact: tone(num(profile.promedio_ingenieria, 3), 4.0, 3.0),
       value: num(profile.promedio_ingenieria, 3).toFixed(2) },
-    { label: 'Promedio basicas', impact: tone(num(profile.promedio_basicas, 3), 4.0, 3.0),
+    { label: 'Promedio básicas', impact: tone(num(profile.promedio_basicas, 3), 4.0, 3.0),
       value: num(profile.promedio_basicas, 3).toFixed(2) },
     { label: 'Asignaturas reprobadas', impact: num(profile.num_reprobadas, 0) <= 1
         ? 'Positivo' : num(profile.num_reprobadas, 0) <= 3 ? 'Moderado' : 'A mejorar',
       value: `${num(profile.num_reprobadas, 0)}` },
-    { label: 'Avance creditos', impact: tone(num(profile.pct_creditos, 50), 70, 40),
+    { label: 'Avance créditos', impact: tone(num(profile.pct_creditos, 50), 70, 40),
       value: `${Math.round(num(profile.pct_creditos, 50))}%` },
-    { label: 'Nivel de ingles', impact: ['B2', 'C1', 'C2'].includes(profile.nivel_ingles)
+    { label: 'Nivel de inglés', impact: ['B2', 'C1', 'C2'].includes(profile.nivel_ingles)
         ? 'Positivo' : ['A1', 'A2'].includes(profile.nivel_ingles) ? 'A mejorar' : 'Moderado',
       value: profile.nivel_ingles || 'B1' },
   ]
@@ -167,11 +167,11 @@ function mlResponseToContract(mlResp, profile) {
         score: Math.round(clamp(Number(a.score) || 0, 0, 100)),
       }))
     : [
-        { id: 'matematicas', label: 'Matematicas / Razonamiento cuantitativo',
+        { id: 'matematicas', label: 'Matemáticas / Razonamiento cuantitativo',
           score: Math.round(clamp(num(profile.promedio_basicas, 3) * 18 + 10, 0, 100)) },
-        { id: 'lectura', label: 'Lectura critica',
+        { id: 'lectura', label: 'Lectura crítica',
           score: Math.round(clamp(((num(profile.promedio_basicas, 3) + num(profile.promedio_ingenieria, 3)) / 2) * 16 + 12, 0, 100)) },
-        { id: 'ingles', label: 'Ingles',
+        { id: 'ingles', label: 'Inglés',
           score: Math.round(clamp(40 + (ENGLISH_BONUS[profile.nivel_ingles] || 12) * 2, 0, 100)) },
         { id: 'competencias', label: 'Competencias ciudadanas',
           score: Math.round(clamp(num(profile.promedio_ingenieria, 3) * 17 + 15, 0, 100)) },
@@ -244,17 +244,17 @@ function buildFactores(v) {
     { label: 'Asistencia a clases', impact: tone(v.asistencia, 90, 70), value: `${Math.round(v.asistencia)}%` },
     { label: 'Horas de estudio semanales', impact: tone(v.horas, 12, 5), value: `${v.horas} h/semana` },
     { label: 'Materias reprobadas', impact: v.reprobadas <= 1 ? 'Positivo' : v.reprobadas <= 3 ? 'Moderado' : 'A mejorar', value: `${v.reprobadas}` },
-    { label: 'Avance en creditos', impact: tone(v.pctCreditos, 70, 40), value: `${Math.round(v.pctCreditos)}%` },
-    { label: 'Nivel de ingles', impact: v.ingles >= 20 ? 'Positivo' : v.ingles >= 10 ? 'Moderado' : 'A mejorar', value: `Bonus ${v.ingles}` },
+    { label: 'Avance en créditos', impact: tone(v.pctCreditos, 70, 40), value: `${Math.round(v.pctCreditos)}%` },
+    { label: 'Nivel de inglés', impact: v.ingles >= 20 ? 'Positivo' : v.ingles >= 10 ? 'Moderado' : 'A mejorar', value: `Bonus ${v.ingles}` },
     { label: 'Simulacros completados', impact: v.simulacros >= 4 ? 'Positivo' : v.simulacros >= 2 ? 'Moderado' : 'A mejorar', value: `${v.simulacros}` },
   ]
 }
 
 function buildAreas(v) {
   return [
-    { id: 'matematicas', label: 'Matematicas / Razonamiento cuantitativo', score: Math.round(clamp(v.basicas * 18 + 10, 0, 100)) },
-    { id: 'lectura', label: 'Lectura critica', score: Math.round(clamp(((v.basicas + v.ingenieria) / 2) * 16 + 12, 0, 100)) },
-    { id: 'ingles', label: 'Ingles', score: Math.round(clamp(40 + v.ingles * 2, 0, 100)) },
+    { id: 'matematicas', label: 'Matemáticas / Razonamiento cuantitativo', score: Math.round(clamp(v.basicas * 18 + 10, 0, 100)) },
+    { id: 'lectura', label: 'Lectura crítica', score: Math.round(clamp(((v.basicas + v.ingenieria) / 2) * 16 + 12, 0, 100)) },
+    { id: 'ingles', label: 'Inglés', score: Math.round(clamp(40 + v.ingles * 2, 0, 100)) },
     { id: 'competencias', label: 'Competencias ciudadanas', score: Math.round(clamp(v.ingenieria * 17 + 15, 0, 100)) },
   ]
 }
@@ -264,37 +264,37 @@ function buildRecomendaciones({ clase, promedio, basicas, ingenieria, reprobadas
   const actions = []
   if (promedio < 3.5) {
     improve.push('Elevar el promedio acumulado con asesorias semanales.')
-    actions.push('Agendar tutorias en las materias con menor calificacion.')
+    actions.push('Agendar tutorías en las materias con menor calificación.')
   }
   if (basicas < 3.5) {
-    improve.push('Reforzar fundamentos de matematicas y ciencias basicas.')
+    improve.push('Reforzar fundamentos de matemáticas y ciencias básicas.')
     actions.push('Resolver 30 ejercicios semanales de razonamiento cuantitativo.')
   }
   if (ingenieria < 3.5) {
-    improve.push('Mejorar desempeno en asignaturas de la linea de ingenieria.')
-    actions.push('Formar un grupo de estudio para las materias de ingenieria.')
+    improve.push('Mejorar desempeño en asignaturas de la línea de ingeniería.')
+    actions.push('Formar un grupo de estudio para las materias de ingeniería.')
   }
   if (reprobadas >= 2) {
-    improve.push('Recuperar materias reprobadas para evitar atraso academico.')
+    improve.push('Recuperar materias reprobadas para evitar atraso académico.')
     actions.push('Inscribir materias de habilitacion el siguiente semestre.')
   }
   if (horas < 10) {
-    improve.push('Aumentar la dedicacion semanal al estudio autonomo.')
+    improve.push('Aumentar la dedicación semanal al estudio autónomo.')
     actions.push('Bloquear 10 horas semanales fijas para estudio (Pomodoro 25/5).')
   }
   if (asistencia < 85) {
     improve.push('Mejorar asistencia a clases para no perder explicaciones clave.')
-    actions.push('Activar recordatorios automaticos y registrar asistencia diaria.')
+    actions.push('Activar recordatorios automáticos y registrar asistencia diaria.')
   }
   if (!nivel_ingles || ['A1', 'A2'].includes(nivel_ingles)) {
-    improve.push('Elevar el nivel de ingles para mejorar el componente del Saber Pro.')
-    actions.push('Realizar 20 minutos diarios de practica de ingles con apps tipo Duolingo.')
+    improve.push('Elevar el nivel de inglés para mejorar el componente del Saber Pro.')
+    actions.push('Realizar 20 minutos diarios de práctica de inglés con apps tipo Duolingo.')
   }
   if (improve.length === 0) {
-    improve.push('Mantener constancia academica y los buenos habitos actuales.')
+    improve.push('Mantener constancia académica y los buenos hábitos actuales.')
     actions.push('Realizar 1 simulacro Saber Pro completo cada 3 semanas.')
   }
-  if (clase === 'bajo') actions.push('Acercarse al consejero academico para construir un plan de recuperacion.')
+  if (clase === 'bajo') actions.push('Acercarse al consejero académico para construir un plan de recuperación.')
   else if (clase === 'alto') actions.push('Postularte a programas de monitoria o semilleros de investigacion.')
   return { improve: improve.slice(0, 5), actions: actions.slice(0, 5) }
 }

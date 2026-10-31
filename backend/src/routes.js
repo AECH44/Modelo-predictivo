@@ -33,6 +33,7 @@ import {
   getLatestPrediction,
   getProfile,
   listCohort,
+  listCohortSemesters,
   listPredictions,
   getReportSummary,
   savePrediction,
@@ -59,8 +60,8 @@ function isInstitutionalEmail(email) {
   return typeof email === 'string' && email.trim().toLowerCase().endsWith(INSTITUTIONAL_DOMAIN)
 }
 // Roles administrativos que pueden iniciar sesion con correo no institucional
-// (cuentas de gestion existentes: rector, decano, administrador).
-const ADMIN_ROLES = new Set(['rector', 'decano', 'administrador'])
+// (cuentas de gestion existentes: coordinador, decano, administrador).
+const ADMIN_ROLES = new Set(['coordinador', 'decano', 'administrador'])
 // Nombre: letras (incluye acentos y ñ) + espacios + apóstrofo/guion.
 // Permite el punto solo como abreviación (e.g. "Dr.", "Prof.", "Dra.").
 const NAME_RE =
@@ -82,7 +83,7 @@ function validateName(name) {
   if (value.length < 3) return 'El nombre debe tener al menos 3 caracteres.'
   if (value.length > 80) return 'El nombre no puede superar los 80 caracteres.'
   if (!NAME_RE.test(value)) {
-    return 'El nombre solo puede contener letras y espacios (sin numeros ni simbolos).'
+    return 'El nombre solo puede contener letras y espacios (sin números ni símbolos).'
   }
   return null
 }
@@ -91,7 +92,7 @@ function validateEmail(email) {
   const value = (email || '').trim()
   if (!value) return 'El correo es obligatorio.'
   if (value.length > 120) return 'El correo es demasiado largo.'
-  if (!EMAIL_RE.test(value)) return 'Correo electronico invalido.'
+  if (!EMAIL_RE.test(value)) return 'Correo electrónico inválido.'
   if (!isInstitutionalEmail(value)) {
     return 'Debes usar tu correo institucional (@unac.edu.co).'
   }
@@ -102,16 +103,16 @@ function validateDocumento(doc) {
   const value = (doc || '').toString().trim()
   if (!value) return 'El documento de identidad es obligatorio.'
   if (!DOCUMENTO_RE.test(value)) {
-    return 'El documento debe contener entre 5 y 15 digitos numericos.'
+    return 'El documento debe contener entre 5 y 15 dígitos numéricos.'
   }
   return null
 }
 
 function validatePassword(password) {
   const value = (password || '').toString()
-  if (!value.trim()) return 'La contrasena es obligatoria.'
+  if (!value.trim()) return 'La contraseña es obligatoria.'
   if (value.trim().length < 6) {
-    return 'La contrasena debe tener al menos 6 caracteres.'
+    return 'La contraseña debe tener al menos 6 caracteres.'
   }
   return null
 }
@@ -160,12 +161,12 @@ router.post('/auth/register', async (req, res) => {
     const normalizedDoc = documento.toString().trim()
 
     if (await findUserByEmail(normalizedEmail)) {
-      return res.status(409).json({ ok: false, message: 'Ese correo ya esta registrado.' })
+      return res.status(409).json({ ok: false, message: 'Ese correo ya está registrado.' })
     }
     if (await findUserByDocumento(normalizedDoc)) {
       return res
         .status(409)
-        .json({ ok: false, message: 'Ese documento ya esta registrado.' })
+        .json({ ok: false, message: 'Ese documento ya está registrado.' })
     }
 
     const safeProgram = program === 'industrial' ? 'industrial' : 'sistemas'
@@ -208,7 +209,7 @@ router.post('/auth/login', async (req, res) => {
     if (!rawId || !password) {
       return res
         .status(400)
-        .json({ ok: false, message: 'Usuario y contrasena son obligatorios.' })
+        .json({ ok: false, message: 'Usuario y contraseña son obligatorios.' })
     }
 
     const user = await findUserByEmailOrDocumento(rawId)
@@ -230,7 +231,7 @@ router.post('/auth/login', async (req, res) => {
     if (user.is_active === false) {
       return res.status(403).json({
         ok: false,
-        message: 'Tu cuenta esta desactivada. Contacta al administrador.',
+        message: 'Tu cuenta está desactivada. Contacta al administrador.',
       })
     }
 
@@ -239,12 +240,12 @@ router.post('/auth/login', async (req, res) => {
     if (user.is_synthetic === true) {
       return res.status(403).json({
         ok: false,
-        message: 'Esta cuenta es de uso institucional y no permite inicio de sesion.',
+        message: 'Esta cuenta es de uso institucional y no permite inicio de sesión.',
       })
     }
 
     // Politica de email:
-    //  - Admins (rector/decano/administrador): exentos.
+    //  - Admins (coordinador/decano/administrador): exentos.
     //  - Estudiantes: el CSV identificado es el roster autoritativo. Si
     //    findUserByEmailOrDocumento encontro al usuario, su correo ya fue
     //    cargado desde el CSV por import-students-v2.js. Aceptamos cualquier
@@ -268,7 +269,7 @@ router.post('/auth/login', async (req, res) => {
         detalles: { reason: 'bad_password' },
         userAgent: req.headers['user-agent'],
       }).catch((e) => console.error('[audit] failed:', e.message))
-      return res.status(401).json({ ok: false, message: 'La contrasena es incorrecta.' })
+      return res.status(401).json({ ok: false, message: 'La contraseña es incorrecta.' })
     }
 
     const safe = sanitizeUserRow(user)
@@ -301,7 +302,7 @@ router.post('/auth/login', async (req, res) => {
     })
   } catch (err) {
     console.error('[auth/login] error:', err)
-    return res.status(500).json({ ok: false, message: 'Error iniciando sesion.' })
+    return res.status(500).json({ ok: false, message: 'Error iniciando sesión.' })
   }
 })
 
@@ -400,7 +401,7 @@ router.get('/auth/me', requireAuth, async (req, res) => {
     if (user.is_active === false) {
       return res.status(403).json({
         ok: false,
-        message: 'Tu cuenta esta desactivada. Contacta al administrador.',
+        message: 'Tu cuenta está desactivada. Contacta al administrador.',
       })
     }
     return res.json({ ok: true, user: sanitizeUserRow(user) })
@@ -485,7 +486,7 @@ router.get('/auth/google/callback', async (req, res) => {
   const state = (req.query.state || '').toString()
   if (!code || !state) {
     return res.redirect(
-      `${frontend}/login?google_error=${encodeURIComponent('Faltan parametros en la respuesta de Google.')}`
+      `${frontend}/login?google_error=${encodeURIComponent('Faltan parámetros en la respuesta de Google.')}`
     )
   }
   try {
@@ -547,7 +548,7 @@ router.get('/auth/google/callback', async (req, res) => {
 router.post('/auth/google/exchange', async (req, res) => {
   return res.status(501).json({
     ok: false,
-    message: 'Flujo no implementado. Usa el boton "Entrar con Google" del login.',
+    message: 'Flujo no implementado. Usa el botón "Entrar con Google" del login.',
   })
 })
 
@@ -612,7 +613,7 @@ router.patch('/auth/me', requireAuth, async (req, res) => {
         if (existing && existing.id !== req.userId) {
           return res.status(409).json({
             ok: false,
-            message: 'Ese documento ya esta registrado por otra cuenta.',
+            message: 'Ese documento ya está registrado por otra cuenta.',
           })
         }
         updated = await updateDocumento(req.userId, normalizedDoc)
@@ -637,14 +638,14 @@ router.patch('/auth/me/password', requireAuth, async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res
         .status(400)
-        .json({ ok: false, message: 'Se requiere la contrasena actual y la nueva.' })
+        .json({ ok: false, message: 'Se requiere la contraseña actual y la nueva.' })
     }
     const passError = validatePassword(newPassword)
     if (passError) return res.status(400).json({ ok: false, message: passError })
     if (currentPassword === newPassword) {
       return res
         .status(400)
-        .json({ ok: false, message: 'La nueva contrasena debe ser distinta a la actual.' })
+        .json({ ok: false, message: 'La nueva contraseña debe ser distinta a la actual.' })
     }
 
     const user = await findUserById(req.userId)
@@ -654,7 +655,7 @@ router.patch('/auth/me/password', requireAuth, async (req, res) => {
     if (!okCurrent) {
       return res
         .status(401)
-        .json({ ok: false, message: 'La contrasena actual es incorrecta.' })
+        .json({ ok: false, message: 'La contraseña actual es incorrecta.' })
     }
 
     const newHash = await hashPassword(newPassword.trim())
@@ -667,12 +668,12 @@ router.patch('/auth/me/password', requireAuth, async (req, res) => {
     }).catch((e) => console.error('[audit] failed:', e.message))
     return res.json({
       ok: true,
-      message: 'Contrasena actualizada.',
+      message: 'Contraseña actualizada.',
       user: sanitizeUserRow(updated),
     })
   } catch (err) {
     console.error('[auth/me/password PATCH] error:', err)
-    return res.status(500).json({ ok: false, message: 'Error actualizando contrasena.' })
+    return res.status(500).json({ ok: false, message: 'Error actualizando contraseña.' })
   }
 })
 
@@ -725,10 +726,10 @@ function validateProfilePayload(p) {
   }
   const checks = [
     badRange(p.promedio_acumulado, 0, 5, 'Promedio acumulado'),
-    badRange(p.promedio_basicas, 0, 5, 'Promedio de basicas'),
-    badRange(p.promedio_ingenieria, 0, 5, 'Promedio de ingenieria'),
-    badRange(p.num_reprobadas, 0, 30, 'Numero de reprobadas'),
-    badRange(p.pct_creditos, 0, 100, 'Porcentaje de creditos'),
+    badRange(p.promedio_basicas, 0, 5, 'Promedio de básicas'),
+    badRange(p.promedio_ingenieria, 0, 5, 'Promedio de ingeniería'),
+    badRange(p.num_reprobadas, 0, 30, 'Número de reprobadas'),
+    badRange(p.pct_creditos, 0, 100, 'Porcentaje de créditos'),
     badRange(p.semestre, 1, 12, 'Semestre'),
     badRange(p.estrato, 1, 6, 'Estrato'),
     badRange(p.edad, 14, 80, 'Edad'),
@@ -737,10 +738,10 @@ function validateProfilePayload(p) {
     badRange(p.asistencia_pct, 0, 100, 'Asistencia'),
   ]
   if (p.genero !== undefined && p.genero !== null && p.genero !== '') {
-    if (!['M', 'F', 'O'].includes(p.genero)) checks.push('Genero invalido.')
+    if (!['M', 'F', 'O'].includes(p.genero)) checks.push('Género inválido.')
   }
   if (p.nivel_ingles !== undefined && p.nivel_ingles !== null && p.nivel_ingles !== '') {
-    if (!ENGLISH_LEVELS.has(p.nivel_ingles)) checks.push('Nivel de ingles invalido.')
+    if (!ENGLISH_LEVELS.has(p.nivel_ingles)) checks.push('Nivel de inglés inválido.')
   }
   return checks.find(Boolean) || null
 }
@@ -761,8 +762,8 @@ router.put('/student/profile', requireAuth, requireStudent, async (req, res) => 
     return res.json({
       ok: true,
       message: saved
-        ? 'Perfil guardado y prediccion actualizada.'
-        : 'Perfil guardado. Aun no tienes datos academicos suficientes para generar una prediccion.',
+        ? 'Perfil guardado y predicción actualizada.'
+        : 'Perfil guardado. Aún no tienes datos académicos suficientes para generar una predicción.',
       profile,
       prediction: saved,
       sinDatosSuficientes: !saved,
@@ -787,35 +788,46 @@ router.get('/student/predictions', requireAuth, requireStudent, async (req, res)
 })
 
 // =====================================================================
-// COHORTE — para profesor / decano / rector
+// COHORTE — para profesor / decano / coordinador
 // =====================================================================
 
 router.get('/cohort/students', requireAuth, async (req, res) => {
   try {
     const me = await findUserById(req.userId)
     if (!me) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
-    if (!['rector', 'decano', 'administrador'].includes(me.role)) {
+    if (!['coordinador', 'decano', 'administrador'].includes(me.role)) {
       return res
         .status(403)
         .json({ ok: false, message: 'No autorizado para ver la cohorte.' })
     }
 
-    // Rector y administrador ven todo. Decano/Profesor ven solo SU programa,
+    // Coordinador y administrador ven todo. Decano/Profesor ven solo SU programa,
     // salvo que explicitamente pidan otro (no se permite saltar la
     // restriccion). El administrador puede forzar un programa concreto.
     const requested = req.query.program
     let program = 'all'
-    if (me.role === 'rector' || me.role === 'administrador') {
+    if (me.role === 'coordinador' || me.role === 'administrador') {
       program = ['sistemas', 'industrial', 'all'].includes(requested) ? requested : 'all'
     } else {
       program = me.program === 'all' ? (requested || 'all') : me.program
     }
 
-    const [students, metrics] = await Promise.all([
-      listCohort({ program }),
-      cohortMetrics({ program }),
+    // Filtro opcional por semestre (1-12). Aplica a la lista y a las
+    // metricas, para que las tarjetas y la tabla muestren lo mismo.
+    const semestreRaw = req.query.semestre
+    const semestreNum = Number(semestreRaw)
+    const semestre =
+      semestreRaw !== undefined && semestreRaw !== '' &&
+      Number.isInteger(semestreNum) && semestreNum >= 1 && semestreNum <= 12
+        ? semestreNum
+        : null
+
+    const [students, metrics, semestres] = await Promise.all([
+      listCohort({ program, semestre }),
+      cohortMetrics({ program, semestre }),
+      listCohortSemesters({ program }),
     ])
-    return res.json({ ok: true, program, students, metrics })
+    return res.json({ ok: true, program, semestre, semestres, students, metrics })
   } catch (err) {
     console.error('[cohort/students] error:', err)
     return res.status(500).json({ ok: false, message: 'Error cargando cohorte.' })
@@ -989,11 +1001,11 @@ router.post('/admin/users', requireAuth, requireAdmin, async (req, res) => {
     const emailError = validateEmail(email)
     if (emailError) return res.status(400).json({ ok: false, message: emailError })
 
-    if (!['rector', 'decano', 'administrador', 'estudiante'].includes(role)) {
-      return res.status(400).json({ ok: false, message: 'Rol invalido.' })
+    if (!['coordinador', 'decano', 'administrador', 'estudiante'].includes(role)) {
+      return res.status(400).json({ ok: false, message: 'Rol inválido.' })
     }
     if (!['sistemas', 'industrial', 'all'].includes(program)) {
-      return res.status(400).json({ ok: false, message: 'Programa invalido.' })
+      return res.status(400).json({ ok: false, message: 'Programa inválido.' })
     }
     // Regla: estudiante siempre en un programa concreto.
     const safeProgram = role === 'estudiante' ? 'sistemas' : program
@@ -1059,7 +1071,7 @@ router.patch('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => 
   try {
     const id = parseInt(req.params.id, 10)
     if (!Number.isFinite(id)) {
-      return res.status(400).json({ ok: false, message: 'ID invalido.' })
+      return res.status(400).json({ ok: false, message: 'ID inválido.' })
     }
     const current = await findUserByIdIncludingInactive(id)
     if (!current) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
@@ -1077,18 +1089,18 @@ router.patch('/admin/users/:id', requireAuth, requireAdmin, async (req, res) => 
       updates.email = String(email).trim().toLowerCase()
       const dup = await findUserByEmail(updates.email)
       if (dup && dup.id !== id) {
-        return res.status(409).json({ ok: false, message: 'Ese correo ya esta registrado por otra cuenta.' })
+        return res.status(409).json({ ok: false, message: 'Ese correo ya está registrado por otra cuenta.' })
       }
     }
     if (role !== undefined) {
-      if (!['rector', 'decano', 'administrador', 'estudiante'].includes(role)) {
-        return res.status(400).json({ ok: false, message: 'Rol invalido.' })
+      if (!['coordinador', 'decano', 'administrador', 'estudiante'].includes(role)) {
+        return res.status(400).json({ ok: false, message: 'Rol inválido.' })
       }
       updates.role = role
     }
     if (program !== undefined) {
       if (!['sistemas', 'industrial', 'all'].includes(program)) {
-        return res.status(400).json({ ok: false, message: 'Programa invalido.' })
+        return res.status(400).json({ ok: false, message: 'Programa inválido.' })
       }
       updates.program = program
     }
@@ -1130,7 +1142,7 @@ router.post('/admin/users/:id/deactivate', requireAuth, requireAdmin, async (req
   try {
     const id = parseInt(req.params.id, 10)
     if (!Number.isFinite(id)) {
-      return res.status(400).json({ ok: false, message: 'ID invalido.' })
+      return res.status(400).json({ ok: false, message: 'ID inválido.' })
     }
     if (id === req.userId) {
       return res.status(400).json({ ok: false, message: 'No puedes desactivarte a ti mismo.' })
@@ -1168,7 +1180,7 @@ router.post('/admin/users/:id/activate', requireAuth, requireAdmin, async (req, 
   try {
     const id = parseInt(req.params.id, 10)
     if (!Number.isFinite(id)) {
-      return res.status(400).json({ ok: false, message: 'ID invalido.' })
+      return res.status(400).json({ ok: false, message: 'ID inválido.' })
     }
     const current = await findUserByIdIncludingInactive(id)
     if (!current) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
@@ -1212,7 +1224,7 @@ router.get('/admin/audit', requireAuth, requireAdmin, async (req, res) => {
     return res.json({ ok: true, entries: rows, total, limit, offset })
   } catch (err) {
     console.error('[admin/audit] error:', err)
-    return res.status(500).json({ ok: false, message: 'Error cargando auditoria.' })
+    return res.status(500).json({ ok: false, message: 'Error cargando auditoría.' })
   }
 })
 
@@ -1221,7 +1233,7 @@ router.get('/admin/users/:id/audit', requireAuth, requireAdmin, async (req, res)
   try {
     const id = parseInt(req.params.id, 10)
     if (!Number.isFinite(id)) {
-      return res.status(400).json({ ok: false, message: 'ID invalido.' })
+      return res.status(400).json({ ok: false, message: 'ID inválido.' })
     }
     const target = await findUserByIdIncludingInactive(id)
     if (!target) return res.status(404).json({ ok: false, message: 'Usuario no encontrado.' })
@@ -1234,7 +1246,7 @@ router.get('/admin/users/:id/audit', requireAuth, requireAdmin, async (req, res)
     return res.json({ ok: true, entries: rows, total, limit, offset })
   } catch (err) {
     console.error('[admin/users/audit] error:', err)
-    return res.status(500).json({ ok: false, message: 'Error cargando auditoria del usuario.' })
+    return res.status(500).json({ ok: false, message: 'Error cargando auditoría del usuario.' })
   }
 })
 
@@ -1271,9 +1283,9 @@ function readTrainingMetrics() {
 
 // Etiquetas legibles de las tres areas del Saber Pro.
 const AREA_LABELS = {
-  matematicas: 'Matematicas',
-  lectura_critica: 'Lectura critica',
-  ingles: 'Ingles',
+  matematicas: 'Matemáticas',
+  lectura_critica: 'Lectura crítica',
+  ingles: 'Inglés',
 }
 
 // Cortes de banda por defecto (percentiles 30 y 70 de la cohorte). Se usan
@@ -1355,7 +1367,7 @@ function normalizeTrainingMetrics(raw) {
         (muestra.con_las_3_areas ?? 0) - (muestra.excluidas_sin_historial ?? 0),
     },
     global: {
-      modelo: 'Suma de las tres areas (3 regresores)',
+      modelo: 'Suma de las tres áreas (3 regresores)',
       mae: round(derivado.mae, 3),
       rmse: round(derivado.rmse, 3),
       r2: round(derivado.r2, 4),
@@ -1403,7 +1415,7 @@ router.get('/analysis/metrics', requireAuth, requireAdmin, async (_req, res) => 
     return res.status(404).json({
       ok: false,
       message:
-        'No se encontro saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
+        'No se encontró saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
     })
   }
   return res.json({ ok: true, metrics: normalizeTrainingMetrics(found.raw) })
@@ -1504,7 +1516,7 @@ router.post('/analysis/predict', requireAuth, requireAdmin, async (req, res) => 
     console.error('[analysis/predict] error:', err)
     return res.status(503).json({
       ok: false,
-      message: 'No se pudo contactar el servicio de prediccion (FastAPI en :8000).',
+      message: 'No se pudo contactar el servicio de predicción (FastAPI en :8000).',
       detail: err.message,
     })
   }
@@ -1627,7 +1639,7 @@ router.get('/analysis/export/metrics.csv', requireAuth, requireAdmin, async (_re
     return res.status(404).json({
       ok: false,
       message:
-        'No se encontro saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
+        'No se encontró saberpro_v2_metrics.json. Corre ml-training/train_saberpro_v2.py.',
     })
   }
   const metrics = normalizeTrainingMetrics(found.raw)

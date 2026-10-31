@@ -1,6 +1,6 @@
 import { pool } from './db.js'
 
-const ALLOWED_ROLES = new Set(['rector', 'decano', 'profesor', 'administrador', 'estudiante'])
+const ALLOWED_ROLES = new Set(['coordinador', 'decano', 'profesor', 'administrador', 'estudiante'])
 const ALLOWED_PROGRAMS = new Set(['sistemas', 'industrial', 'all'])
 
 export function sanitizeUserRow(row) {
@@ -208,7 +208,7 @@ export async function countActiveUsersByRole() {
     `SELECT role, COUNT(*)::int AS n FROM usuarios
        WHERE is_active = TRUE GROUP BY role`,
   )
-  const out = { rector: 0, decano: 0, profesor: 0, administrador: 0, estudiante: 0 }
+  const out = { coordinador: 0, decano: 0, profesor: 0, administrador: 0, estudiante: 0 }
   for (const r of rows) out[r.role] = r.n
   return out
 }

@@ -101,12 +101,12 @@ async function main() {
 
     // Validaciones
     if (!DOCUMENTO_RE.test(doc)) {
-      errors.push(`Fila ${i + 2}: documento invalido "${doc}"`)
+      errors.push(`Fila ${i + 2}: documento inválido "${doc}"`)
       skipped++
       continue
     }
     if (!NAME_RE.test(name) || name.length < 3) {
-      errors.push(`Fila ${i + 2}: nombre invalido "${name}"`)
+      errors.push(`Fila ${i + 2}: nombre inválido "${name}"`)
       skipped++
       continue
     }
@@ -188,7 +188,7 @@ async function main() {
   if (errors.length) {
     console.log(`\n  Errores (${errors.length}):`)
     errors.slice(0, 20).forEach((e) => console.log('    - ' + e))
-    if (errors.length > 20) console.log(`    ... y ${errors.length - 20} mas`)
+    if (errors.length > 20) console.log(`    ... y ${errors.length - 20} más`)
   }
 
   if (credenciales.length) {
@@ -205,7 +205,7 @@ async function main() {
       lines.push([c.documento, JSON.stringify(c.nombre), c.email, c.programa, c.password ?? '', c.accion].join(','))
     })
     fs.writeFileSync(outPath, lines.join('\n'), 'utf8')
-    console.log(`\n  Tambien exportado a: ${outPath}`)
+    console.log(`\n  También exportado a: ${outPath}`)
   }
 
   await pool.end()

@@ -19,8 +19,8 @@
 //   - num_reprobadas    <- ASIGNATURAS_REPROBADAS
 //   - pct_creditos      <- PORCENTAJE_AVANCE
 //   - estrato           <- "ESTRATO N" -> N
-//   - nivel_ingles      <- escala 1-7 -> A1..C2
-//   - trabaja           <- boolean desde CONDICION_LABORAL (acepta acentos)
+//   - nivel_ingles      <- escala 1-7 -> A1/A2/B1 (ver INGLES_MAP)
+////   - trabaja           <- boolean desde CONDICION_LABORAL (acepta acentos)
 //   - genero            <- 'M' | 'F' | 'O' | null
 //
 // Defaults que el CSV NO trae (alineados con el DDL):
@@ -29,7 +29,27 @@
 //   simulacros_realizados = 0.
 // =====================================================================
 
-const INGLES_MAP = { 1: 'A1', 2: 'A2', 3: 'B1', 4: 'B2', 5: 'C1', 6: 'C2', 7: 'C2' }
+// Escala de ingles del CSV (PROMEDIO_INGLES) -> nivel MCER.
+//
+// La escala real del export va de 1 a 7 y NO es una escala MCER: el
+// nivel 6 o 7 significa "B1" (no "C2", como se mapeaba antes y hacia que
+// 211 estudiantes aparecieran con nivel C2).
+//
+//   1 y 2   -> A1
+//   3, 4, 5 -> A2
+//   6 y 7   -> B1
+//   > 7     -> banda C (8 -> C1, 9 o mas -> C2)
+//
+// El export trae algun valor por encima de 7 (hay filas con 8 y una con 11),
+// asi que la regla se aplica por rango y no con una tabla cerrada.
+export function nivelInglesDesdeEscala(n) {
+  if (n === 1 || n === 2) return 'A1'
+  if (n >= 3 && n <= 5) return 'A2'
+  if (n === 6 || n === 7) return 'B1'
+  if (n === 8) return 'C1'
+  if (n >= 9) return 'C2'
+  return null
+}
 
 // CSV usa "CONDICION_LABORAL" en el archivo nuevo; el viejo usaba
 // "CONDICION_LABORAL (¿Trabaja?)". Aceptamos ambos.
@@ -135,9 +155,11 @@ function parseGenero(raw) {
 }
 
 function parseIngles(raw) {
-  const n = toInt(raw, 0, 7)
+  // El rango llega hasta 20 para no descartar los niveles "C" (8, 9, 10, 11)
+  // que aparecen en el export y pueden venir de la API de la universidad.
+  const n = toInt(raw, 0, 20)
   if (n === null || n === 0) return null
-  return INGLES_MAP[n] ?? null
+  return nivelInglesDesdeEscala(n)
 }
 
 function derivePromedioIngenieria(prog, mate) {

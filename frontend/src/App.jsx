@@ -34,6 +34,7 @@ import {
   apiGetGoogleAuthUrl,
   apiGetStudentPredictions,
   apiGetStudentProfile,
+  apiHealth,
   apiListAdminUsers,
   apiLogin,
   apiLogout,
@@ -50,7 +51,7 @@ import {
 const STORAGE_SESSION_KEY = 'saberpro.session'
 
 const PROGRAMS = {
-  sistemas: 'Ingenieria de Sistemas',
+  sistemas: 'Ingeniería de Sistemas',
 }
 
 const EMPTY_VALUE = ''
@@ -146,8 +147,8 @@ function ToastProvider({ children }) {
   const typeLabels = {
     success: 'Exito',
     error: 'Error',
-    warning: 'Atencion',
-    info: 'Informacion',
+    warning: 'Atención',
+    info: 'Información',
   }
 
   return (
@@ -185,7 +186,7 @@ function ToastProvider({ children }) {
                 </button>
               ) : null}
             </div>
-            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="Cerrar notificacion">
+            <button className="toast-close" onClick={() => dismiss(t.id)} aria-label="Cerrar notificación">
               <Icon name="x" size={14} />
             </button>
           </div>
@@ -405,11 +406,11 @@ function SessionBanner({ token }) {
         <Icon name={urgent ? 'warning' : 'bell'} size={18} />
       </span>
       <p className="session-banner-text">
-        Tu sesion expira en <strong>{mm}:{ss}</strong>.
-        {' '}{urgent ? 'Guarda tu trabajo y vuelve a iniciar sesion.' : 'Considera guardar cambios pendientes.'}
+        Tu sesión expira en <strong>{mm}:{ss}</strong>.
+        {' '}{urgent ? 'Guarda tu trabajo y vuelve a iniciar sesión.' : 'Considera guardar cambios pendientes.'}
       </p>
       <button type="button" onClick={handleLogout}>
-        <Icon name="logout" size={14} /> Cerrar sesion
+        <Icon name="logout" size={14} /> Cerrar sesión
       </button>
     </div>
   )
@@ -496,7 +497,7 @@ function RecentActivity({ limit = 5 }) {
     return <EmptyState icon="warning" title="No se pudo cargar la actividad" message={error} />
   }
   if (!entries.length) {
-    return <EmptyState icon="inbox" title="Sin actividad reciente" message="Las acciones de administradores apareceran aqui." />
+    return <EmptyState icon="inbox" title="Sin actividad reciente" message="Las acciones de administradores apareceran aquí." />
   }
 
   function iconFor(accion) {
@@ -544,20 +545,20 @@ function RecentActivity({ limit = 5 }) {
   }
   function describe(entry) {
     switch (entry.accion) {
-      case 'LOGIN_SUCCESS': return 'Inicio de sesion'
+      case 'LOGIN_SUCCESS': return 'Inicio de sesión'
       case 'LOGIN_FAIL': return 'Intento de login fallido'
       case 'LOGIN_FAIL_BAD_PASSWORD':
-      case 'bad_password': return 'Login fallido (contrasena incorrecta)'
+      case 'bad_password': return 'Login fallido (contraseña incorrecta)'
       case 'LOGIN_FAIL_NO_USER':
       case 'no_user': return 'Login fallido (usuario no existe)'
-      case 'USER_UPSERT': return 'Creo/actualizo usuario'
+      case 'USER_UPSERT': return 'Creó/actualizó usuario'
       case 'USER_EDIT': return 'Edito usuario'
       case 'USER_DEACTIVATE': return 'Desactivo usuario'
       case 'USER_ACTIVATE': return 'Reactivo usuario'
-      case 'PASSWORD_CHANGE': return 'Cambio su contrasena'
-      case 'RECOVER_REQUEST': return 'Solicito recuperacion'
-      case 'EXPORT_METRICS_CSV': return 'Exporto metricas CSV'
-      default: return `Accion: ${entry.accion}`
+      case 'PASSWORD_CHANGE': return 'Cambio su contraseña'
+      case 'RECOVER_REQUEST': return 'Solicito recuperación'
+      case 'EXPORT_METRICS_CSV': return 'Exporto métricas CSV'
+      default: return `Acción: ${entry.accion}`
     }
   }
 
@@ -576,7 +577,7 @@ function RecentActivity({ limit = 5 }) {
           <tr>
             <th className="activity-table-th-icon" aria-label="Tipo"></th>
             <th className="activity-table-th-user">Usuario</th>
-            <th className="activity-table-th-action">Accion</th>
+            <th className="activity-table-th-action">Acción</th>
             <th className="activity-table-th-when">Cuando</th>
             <th className="activity-table-th-client">Cliente</th>
           </tr>
@@ -619,28 +620,28 @@ function RecentActivity({ limit = 5 }) {
 // Modal con busqueda fuzzy sobre un catalogo de acciones.
 // Las acciones reciben { close, navigate } para cerrarse y navegar.
 const ROLE_CONFIG = {
-  rector: {
-    label: 'Rector',
-    icon: 'crown',
-    department: 'Rectoria',
-    topbarTitle: 'Panel Rector',
-    topbarSubtitle: 'Universidad Nacional · Seguimiento institucional 2024',
-    nav: ['Panel Rector', 'Metas estrategicas', 'Comparativo', 'Reportes'],
+  coordinador: {
+    label: 'Coordinador/a de programa',
+    icon: 'target',
+    department: 'Coordinación de Programa',
+    topbarTitle: 'Panel de Coordinación',
+    topbarSubtitle: 'Corporación Universitaria Adventista - Facultad de Ingeniería',
+    nav: ['Panel del programa', 'Metas estratégicas', 'Comparativo', 'Reportes'],
   },
   decano: {
     label: 'Decano',
     icon: 'userTie',
-    department: 'Facultad de Ingenieria',
+    department: 'Facultad de Ingeniería',
     topbarTitle: 'Dashboard Ejecutivo',
-    topbarSubtitle: 'Analisis por programa academico',
+    topbarSubtitle: 'Corporación Universitaria Adventista - Facultad de Ingeniería',
     nav: ['Programas', 'Dashboard', 'Benchmarking', 'Indicadores'],
   },
   profesor: {
     label: 'Profesor',
     icon: 'teacher',
     department: 'Vista Docente',
-    topbarTitle: 'Desempeno de la cohorte',
-    topbarSubtitle: 'Seguimiento academico de estudiantes',
+    topbarTitle: 'Desempeño de la cohorte',
+    topbarSubtitle: 'Corporación Universitaria Adventista - Facultad de Ingeniería',
     nav: ['Dashboard', 'Monitoreo', 'Alertas', 'Reportes'],
   },
   estudiante: {
@@ -648,16 +649,16 @@ const ROLE_CONFIG = {
     icon: 'student',
     department: 'Portal Estudiantil',
     topbarTitle: 'Mi progreso',
-    topbarSubtitle: 'Consulta personal y actualizacion de datos',
-    nav: ['Mi resumen', 'Mi prediccion', 'Recomendaciones'],
+    topbarSubtitle: 'Corporación Universitaria Adventista - Facultad de Ingeniería',
+    nav: ['Mi resumen', 'Mi predicción', 'Recomendaciones'],
   },
   administrador: {
     label: 'Administrador',
     icon: 'shield',
-    department: 'Administracion del sistema',
-    topbarTitle: 'Panel de Administracion',
-    topbarSubtitle: 'Acceso total a todos los modulos y reportes',
-    nav: ['Panel Administrador', 'Usuarios', 'Auditoria', 'Comparativo', 'Reportes', 'Analisis del modelo'],
+    department: 'Administración del sistema',
+    topbarTitle: 'Panel de Administración',
+    topbarSubtitle: 'Corporación Universitaria Adventista - Facultad de Ingeniería',
+    nav: ['Panel Administrador', 'Usuarios', 'Auditoría', 'Comparativo', 'Reportes', 'Análisis del modelo'],
   },
 }
 
@@ -736,11 +737,11 @@ const STUDENT_RECORDS = [
 // (tabla `usuarios`). El cliente no almacena correos ni contrasenas.
 
 const PROGRAM_OPTIONS = [
-  { value: 'sistemas', label: 'Ingenieria de Sistemas' },
+  { value: 'sistemas', label: 'Ingeniería de Sistemas' },
 ]
 
-const RECTOR_PROGRAM_OPTIONS = [
-  { value: 'sistemas', label: 'Ingenieria de Sistemas' },
+const COORDINADOR_PROGRAM_OPTIONS = [
+  { value: 'sistemas', label: 'Ingeniería de Sistemas' },
 ]
 
 const STUDENT_DASHBOARD_MOCK = {
@@ -749,30 +750,30 @@ const STUDENT_DASHBOARD_MOCK = {
   risk: 'medio',
   studyHours: 11,
   trend: '+6 puntos frente al simulacro anterior',
-  strengths: ['Ingles', 'Razonamiento cuantitativo'],
+  strengths: ['Inglés', 'Razonamiento cuantitativo'],
   recommendation:
-    'Fortalece lectura critica con ejercicios de inferencia y aumenta practica semanal con simulacros cortos.',
+    'Fortalece lectura crítica con ejercicios de inferencia y aumenta práctica semanal con simulacros cortos.',
   factors: [
     { label: 'Asistencia a clases', impact: 'Positivo', value: '92%' },
     { label: 'Horas de estudio semanales', impact: 'Moderado', value: '11 h/semana' },
     { label: 'Constancia en simulacros', impact: 'Positivo', value: '4 de 5 completados' },
-    { label: 'Gestion del tiempo en lectura', impact: 'A mejorar', value: 'Eficiencia media' },
+    { label: 'Gestión del tiempo en lectura', impact: 'A mejorar', value: 'Eficiencia media' },
   ],
   performanceAreas: [
-    { id: 'matematicas', label: 'Matematicas', score: 74 },
-    { id: 'lectura', label: 'Lectura critica', score: 58 },
-    { id: 'ingles', label: 'Ingles', score: 67 },
+    { id: 'matematicas', label: 'Matemáticas', score: 74 },
+    { id: 'lectura', label: 'Lectura crítica', score: 58 },
+    { id: 'ingles', label: 'Inglés', score: 67 },
   ],
   recommendations: {
     improve: [
-      'Incrementar precision en preguntas de inferencia en lectura critica.',
-      'Mantener ritmo de practica en razonamiento cuantitativo.',
+      'Incrementar precisión en preguntas de inferencia en lectura crítica.',
+      'Mantener ritmo de práctica en razonamiento cuantitativo.',
       'Mejorar velocidad de respuesta en bloques de tiempo limitado.',
     ],
     actions: [
       'Realizar 3 micro-simulacros semanales de 20 minutos.',
       'Usar una rutina Pomodoro 25-5 en sesiones de lectura.',
-      'Resolver 15 preguntas de ingles por semana con retroalimentacion.',
+      'Resolver 15 preguntas de inglés por semana con retroalimentación.',
     ],
   },
   comparison: {
@@ -784,7 +785,7 @@ const STUDENT_DASHBOARD_MOCK = {
     { label: 'Simulacro 2', score: 239 },
     { label: 'Simulacro 3', score: 246 },
     { label: 'Simulacro 4', score: 252 },
-    { label: 'Prediccion actual', score: 258 },
+    { label: 'Predicción actual', score: 258 },
   ],
 }
 
@@ -803,25 +804,25 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 8,
       risk: 'alto',
       trend: '+3 puntos',
-      strengths: ['Ingles'],
+      strengths: ['Inglés'],
       factors: [
         { label: 'Asistencia', impact: 'A mejorar', value: '76%' },
         { label: 'Horas de estudio', impact: 'Moderado', value: '8 h/semana' },
         { label: 'Entrega de guias', impact: 'A mejorar', value: '62%' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 49 },
-        { id: 'lectura', label: 'Lectura critica', score: 57 },
-        { id: 'ingles', label: 'Ingles', score: 64 },
+        { id: 'matematicas', label: 'Matemáticas', score: 49 },
+        { id: 'lectura', label: 'Lectura crítica', score: 57 },
+        { id: 'ingles', label: 'Inglés', score: 64 },
       ],
       recommendations: {
         improve: [
-          'Elevar precision en matematicas basicas.',
-          'Mejorar comprension de enunciados extensos.',
+          'Elevar precisión en matemáticas básicas.',
+          'Mejorar comprensión de enunciados extensos.',
         ],
         actions: [
-          'Taller semanal de refuerzo matematico.',
-          'Practicar 10 preguntas de lectura por sesion.',
+          'Taller semanal de refuerzo matemático.',
+          'Practicar 10 preguntas de lectura por sesión.',
         ],
       },
       comparison: { groupLabel: 'Promedio del grupo', groupAverage: 246 },
@@ -842,20 +843,20 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 10,
       risk: 'medio',
       trend: '+5 puntos',
-      strengths: ['Lectura critica'],
+      strengths: ['Lectura crítica'],
       factors: [
         { label: 'Asistencia', impact: 'Positivo', value: '88%' },
         { label: 'Horas de estudio', impact: 'Moderado', value: '10 h/semana' },
         { label: 'Simulacros', impact: 'Positivo', value: '3 de 4' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 61 },
-        { id: 'lectura', label: 'Lectura critica', score: 69 },
-        { id: 'ingles', label: 'Ingles', score: 58 },
+        { id: 'matematicas', label: 'Matemáticas', score: 61 },
+        { id: 'lectura', label: 'Lectura crítica', score: 69 },
+        { id: 'ingles', label: 'Inglés', score: 58 },
       ],
       recommendations: {
-        improve: ['Subir desempeno en ingles academico.'],
-        actions: ['Laboratorio de vocabulario tecnico dos veces por semana.'],
+        improve: ['Subir desempeño en inglés académico.'],
+        actions: ['Laboratorio de vocabulario técnico dos veces por semana.'],
       },
       comparison: { groupLabel: 'Promedio del grupo', groupAverage: 246 },
       progress: [
@@ -875,20 +876,20 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 14,
       risk: 'bajo',
       trend: '+7 puntos',
-      strengths: ['Matematicas', 'Ingles'],
+      strengths: ['Matemáticas', 'Inglés'],
       factors: [
         { label: 'Asistencia', impact: 'Positivo', value: '94%' },
         { label: 'Horas de estudio', impact: 'Positivo', value: '14 h/semana' },
         { label: 'Simulacros', impact: 'Positivo', value: '5 de 5' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 78 },
-        { id: 'lectura', label: 'Lectura critica', score: 71 },
-        { id: 'ingles', label: 'Ingles', score: 74 },
+        { id: 'matematicas', label: 'Matemáticas', score: 78 },
+        { id: 'lectura', label: 'Lectura crítica', score: 71 },
+        { id: 'ingles', label: 'Inglés', score: 74 },
       ],
       recommendations: {
-        improve: ['Mantener constancia en lectura critica.'],
-        actions: ['Resolver simulacros avanzados de integracion semanal.'],
+        improve: ['Mantener constancia en lectura crítica.'],
+        actions: ['Resolver simulacros avanzados de integración semanal.'],
       },
       comparison: { groupLabel: 'Promedio del grupo', groupAverage: 246 },
       progress: [
@@ -908,20 +909,20 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 9,
       risk: 'alto',
       trend: '+2 puntos',
-      strengths: ['Lectura critica'],
+      strengths: ['Lectura crítica'],
       factors: [
         { label: 'Asistencia', impact: 'Moderado', value: '81%' },
         { label: 'Horas de estudio', impact: 'A mejorar', value: '9 h/semana' },
         { label: 'Talleres', impact: 'A mejorar', value: '58%' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 53 },
-        { id: 'lectura', label: 'Lectura critica', score: 61 },
-        { id: 'ingles', label: 'Ingles', score: 51 },
+        { id: 'matematicas', label: 'Matemáticas', score: 53 },
+        { id: 'lectura', label: 'Lectura crítica', score: 61 },
+        { id: 'ingles', label: 'Inglés', score: 51 },
       ],
       recommendations: {
-        improve: ['Reforzar ingles y razonamiento numerico.'],
-        actions: ['Asistir a monitorias de ingles y taller de problemas cortos.'],
+        improve: ['Reforzar inglés y razonamiento numérico.'],
+        actions: ['Asistir a monitorías de inglés y taller de problemas cortos.'],
       },
       comparison: { groupLabel: 'Promedio del grupo', groupAverage: 242 },
       progress: [
@@ -941,20 +942,20 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 11,
       risk: 'medio',
       trend: '+6 puntos',
-      strengths: ['Matematicas'],
+      strengths: ['Matemáticas'],
       factors: [
         { label: 'Asistencia', impact: 'Positivo', value: '90%' },
         { label: 'Horas de estudio', impact: 'Moderado', value: '11 h/semana' },
         { label: 'Simulacros', impact: 'Positivo', value: '4 de 5' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 68 },
-        { id: 'lectura', label: 'Lectura critica', score: 64 },
-        { id: 'ingles', label: 'Ingles', score: 59 },
+        { id: 'matematicas', label: 'Matemáticas', score: 68 },
+        { id: 'lectura', label: 'Lectura crítica', score: 64 },
+        { id: 'ingles', label: 'Inglés', score: 59 },
       ],
       recommendations: {
-        improve: ['Consolidar ingles en comprension de textos.'],
-        actions: ['Micro-practicas de ingles tecnico 3 veces por semana.'],
+        improve: ['Consolidar inglés en comprensión de textos.'],
+        actions: ['Micro-prácticas de inglés técnico 3 veces por semana.'],
       },
       comparison: { groupLabel: 'Promedio del grupo', groupAverage: 242 },
       progress: [
@@ -974,16 +975,16 @@ const PROFESSOR_GROUP_MOCK = {
       studyHours: 15,
       risk: 'bajo',
       trend: '+8 puntos',
-      strengths: ['Ingles', 'Lectura critica'],
+      strengths: ['Inglés', 'Lectura crítica'],
       factors: [
         { label: 'Asistencia', impact: 'Positivo', value: '95%' },
         { label: 'Horas de estudio', impact: 'Positivo', value: '15 h/semana' },
         { label: 'Simulacros', impact: 'Positivo', value: '5 de 5' },
       ],
       performanceAreas: [
-        { id: 'matematicas', label: 'Matematicas', score: 73 },
-        { id: 'lectura', label: 'Lectura critica', score: 76 },
-        { id: 'ingles', label: 'Ingles', score: 79 },
+        { id: 'matematicas', label: 'Matemáticas', score: 73 },
+        { id: 'lectura', label: 'Lectura crítica', score: 76 },
+        { id: 'ingles', label: 'Inglés', score: 79 },
       ],
       recommendations: {
         improve: ['Mantener consistencia de alto rendimiento.'],
@@ -1022,9 +1023,9 @@ function readStorage(key, fallback) {
 function normalizeUser(user, index = 0) {
   const normalizedEmail = (user.email || '').trim().toLowerCase()
   const isLegacyAdmin = normalizedEmail === 'admin@saberpro.edu.co'
-  const role = user.role || (isLegacyAdmin ? 'rector' : 'estudiante')
+  const role = user.role || (isLegacyAdmin ? 'coordinador' : 'estudiante')
   const username = user.username?.trim() || `Usuario ${index + 1}`
-  const program = role === 'rector' ? 'all' : user.program || 'sistemas'
+  const program = role === 'coordinador' ? 'all' : user.program || 'sistemas'
 
   return {
     id: user.id ?? null,
@@ -1120,13 +1121,13 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
   const promedioRedondeado =
     b.promedioPuntaje !== null ? Math.round(b.promedioPuntaje) : '—'
 
-  if (user.role === 'rector' || user.role === 'administrador') {
+  if (user.role === 'coordinador' || user.role === 'administrador') {
     return [
       {
-        icon: user.role === 'rector' ? 'crown' : 'shield',
+        icon: user.role === 'coordinador' ? 'target' : 'shield',
         value: String(total),
         label: 'Total de estudiantes',
-        detail: `${evaluados} con prediccion · ${cobertura}% con perfil`,
+        detail: `${evaluados} con predicción · ${cobertura}% con perfil`,
         accent: 'indigo',
       },
       {
@@ -1139,7 +1140,7 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
       {
         icon: 'warning',
         value: String(b.riesgoAlto),
-        label: 'Riesgo critico',
+        label: 'Riesgo crítico',
         detail: `${pctDeEvaluados(b.riesgoAlto)} de los evaluados`,
         accent: 'rose',
       },
@@ -1184,7 +1185,7 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
         value:
           promedioAcumulado !== null ? promedioAcumulado.toFixed(2) : '—',
         label: 'Puntaje real promedio',
-        detail: 'promedio academico acumulado (0-5)',
+        detail: 'promedio académico acumulado (0-5)',
         accent: 'lime',
       },
     ]
@@ -1196,7 +1197,7 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
         icon: 'users',
         value: String(total),
         label: 'Estudiantes en cohorte',
-        detail: `${evaluados} con prediccion`,
+        detail: `${evaluados} con predicción`,
         accent: 'indigo',
       },
       {
@@ -1209,7 +1210,7 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
       {
         icon: 'warning',
         value: String(b.riesgoAlto),
-        label: 'Casos criticos',
+        label: 'Casos críticos',
         detail: `${pctDeEvaluados(b.riesgoAlto)} de los evaluados`,
         accent: 'rose',
       },
@@ -1241,14 +1242,14 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
       icon: 'chart',
       value: studentActual,
       label: 'Mi referencia real',
-      detail: 'Ultimo referente reportado',
+      detail: 'Último referente reportado',
       accent: 'cyan',
     },
     {
       icon: 'warning',
       value: getRiskVisualMeta(studentRisk).label,
       label: 'Nivel de riesgo',
-      detail: 'Semaforo academico',
+      detail: 'Semáforo académico',
       accent: 'rose',
     },
     {
@@ -1262,10 +1263,10 @@ function metricCardsForRole(user, records = [], selectedProgram = null) {
 }
 
 function roleHomeTitle(user, selectedProgram = user.program) {
-  if (user.role === 'rector' || user.role === 'administrador') {
+  if (user.role === 'coordinador' || user.role === 'administrador') {
     return selectedProgram === 'all'
-      ? 'Vision institucional de Saber Pro'
-      : `Vision de ${getProgramLabel(selectedProgram)}`
+      ? 'Visión institucional de Saber Pro'
+      : `Visión de ${getProgramLabel(selectedProgram)}`
   }
 
   if (user.role === 'decano') {
@@ -1280,9 +1281,9 @@ function roleHomeTitle(user, selectedProgram = user.program) {
 }
 
 function roleHomeText(user, selectedProgram = user.program) {
-  if (user.role === 'rector' || user.role === 'administrador') {
+  if (user.role === 'coordinador' || user.role === 'administrador') {
     return selectedProgram === 'all'
-      ? 'Acceso agregado a la ingenieria evaluada, con seguimiento institucional y prioridades rectorales.'
+      ? 'Acceso agregado a la ingeniería evaluada, con seguimiento institucional y prioridades del programa.'
       : `Vista institucional filtrada a ${getProgramLabel(selectedProgram)}.`
   }
 
@@ -1294,7 +1295,7 @@ function roleHomeText(user, selectedProgram = user.program) {
     return 'El profesor puede cambiar la carrera visible desde el selector superior.'
   }
 
-  return 'Como estudiante solo puedes ver tu propia prediccion y actualizar tu informacion personal.'
+  return 'Como estudiante solo puedes ver tu propia predicción y actualizar tu información personal.'
 }
 
 function withFallback(value, fallback) {
@@ -1338,7 +1339,7 @@ function getRiskVisualMeta(risk) {
       label: 'Riesgo bajo',
       icon: 'check',
       tone: 'safe',
-      message: 'Tu progreso actual es consistente con un desempeno esperado estable.',
+      message: 'Tu progreso actual es consistente con un desempeño esperado estable.',
     }
   }
 
@@ -1347,7 +1348,7 @@ function getRiskVisualMeta(risk) {
     label: 'Riesgo medio',
     icon: 'target',
     tone: 'warning',
-    message: 'Hay avances positivos, pero todavia hay variables que requieren seguimiento.',
+    message: 'Hay avances positivos, pero todavía hay variables que requieren seguimiento.',
   }
 }
 
@@ -1368,7 +1369,7 @@ function buildStudentAutomaticAnalysis(studentData, areas) {
   const weakestArea = [...areas].sort((left, right) => left.score - right.score)[0]
   const scoreGap = studentData.predictedScore - studentData.actualScore
 
-  return `El puntaje predicho (${studentData.predictedScore}) refleja un avance de ${scoreGap} puntos frente a tu referencia real (${studentData.actualScore}). Tu mejor resultado esta en ${strongestArea.label} (${strongestArea.score}%), mientras ${weakestArea.label} (${weakestArea.score}%) sigue siendo el principal frente de mejora. Con ${studentData.studyHours} horas de estudio semanales y practica constante de simulacros, la tendencia se mantiene favorable.`
+  return `El puntaje predicho (${studentData.predictedScore}) refleja un avance de ${scoreGap} puntos frente a tu referencia real (${studentData.actualScore}). Tu mejor resultado está en ${strongestArea.label} (${strongestArea.score}%), mientras ${weakestArea.label} (${weakestArea.score}%) sigue siendo el principal frente de mejora. Con ${studentData.studyHours} horas de estudio semanales y práctica constante de simulacros, la tendencia se mantiene favorable.`
 }
 
 function StudentExplanationCard({ analysisText, factors }) {
@@ -1395,7 +1396,7 @@ function StudentPerformanceAreasCard({ areas }) {
   return (
     <article className="card student-block">
       <div className="section-header compact">
-        <h2>Desempeno por areas</h2>
+        <h2>Desempeño por áreas</h2>
       </div>
       <div className="student-area-list">
         {areas.map((area) => {
@@ -1464,7 +1465,7 @@ function StudentComparisonCard({ studentScore, comparison }) {
   return (
     <article className="card student-block">
       <div className="section-header compact">
-        <h2>Comparacion con grupo</h2>
+        <h2>Comparación con grupo</h2>
       </div>
 
       <div className="student-comparison-metrics">
@@ -1505,8 +1506,8 @@ function StudentComparisonCard({ studentScore, comparison }) {
 
       <p className="student-interpretation">
         {gap >= 0
-          ? `Estas ${gap} puntos por encima del promedio del grupo, manteniendo una posicion competitiva.`
-          : `Estas ${Math.abs(gap)} puntos por debajo del promedio del grupo; enfocar lectura critica puede cerrar la brecha.`}
+          ? `Estás ${gap} puntos por encima del promedio del grupo, manteniendo una posición competitiva.`
+          : `Estás ${Math.abs(gap)} puntos por debajo del promedio del grupo; enfocar lectura crítica puede cerrar la brecha.`}
       </p>
     </article>
   )
@@ -1555,7 +1556,7 @@ function StudentRiskVisualCard({ riskLevel }) {
         <span>{riskMeta.message}</span>
       </div>
       <p className="student-interpretation">
-        Este semaforo sintetiza tu estado actual para facilitar decisiones rapidas de estudio.
+        Este semáforo sintetiza tu estado actual para facilitar decisiones rapidas de estudio.
       </p>
     </article>
   )
@@ -1566,13 +1567,13 @@ function StudentQuickEvaluationCard() {
     <article className="card student-block student-quick-eval">
       <div>
         <p className="next-step-kicker">Opcional</p>
-        <h2>Realizar evaluacion rapida</h2>
+        <h2>Realizar evaluación rápida</h2>
         <p className="student-interpretation">
           Simula una mini prueba diagnostica de 15 minutos para actualizar tu proyeccion.
         </p>
       </div>
       <button className="auth-button" type="button">
-        Realizar evaluacion rapida
+        Realizar evaluación rápida
       </button>
     </article>
   )
@@ -1655,8 +1656,8 @@ function buildProfessorInsights(records, metrics, areaAverages) {
 
   return [
     `La mayoria del grupo se concentra en riesgo medio/alto (${mediumHighPct}%).`,
-    `El area con menor rendimiento grupal es ${weakestArea.label} (${weakestArea.score}%).`,
-    `La principal fortaleza colectiva esta en ${strongestArea.label} (${strongestArea.score}%).`,
+    `El área con menor rendimiento grupal es ${weakestArea.label} (${weakestArea.score}%).`,
+    `La principal fortaleza colectiva está en ${strongestArea.label} (${strongestArea.score}%).`,
     `El promedio predicho del grupo es ${metrics.averagePredicted} para ${metrics.total} estudiantes.`,
   ]
 }
@@ -1666,17 +1667,17 @@ function buildProfessorStrategies(metrics, areaAverages) {
   const mediumHighPct = metrics.riskPct.alto + metrics.riskPct.medio
 
   const strategies = [
-    `Refuerzo focalizado en ${weakestAreas[0]?.label || 'areas criticas'} con ejercicios guiados.`,
+    `Refuerzo focalizado en ${weakestAreas[0]?.label || 'areas críticas'} con ejercicios guiados.`,
     `Taller colaborativo para ${weakestAreas[1]?.label || 'segunda area de riesgo'} con seguimiento semanal.`,
   ]
 
   if (mediumHighPct >= 60) {
-    strategies.push('Plan de acompanamiento intensivo para estudiantes en riesgo medio/alto.')
+    strategies.push('Plan de acompañamiento intensivo para estudiantes en riesgo medio/alto.')
   } else {
-    strategies.push('Mantener monitorias preventivas para sostener la tendencia favorable del grupo.')
+    strategies.push('Mantener monitorías preventivas para sostener la tendencia favorable del grupo.')
   }
 
-  strategies.push('Simulacro quincenal con retroalimentacion automatica por competencias.')
+  strategies.push('Simulacro quincenal con retroalimentación automática por competencias.')
 
   return strategies
 }
@@ -1703,7 +1704,7 @@ function ProfessorMetricsCards({ metrics }) {
     {
       label: 'Promedio puntaje predicho',
       value: metrics.averagePredicted,
-      detail: `Periodo ${PROFESSOR_GROUP_MOCK.currentPeriod}`,
+      detail: `Período ${PROFESSOR_GROUP_MOCK.currentPeriod}`,
       accent: 'indigo',
       icon: 'target',
     },
@@ -1724,7 +1725,7 @@ function ProfessorMetricsCards({ metrics }) {
     {
       label: 'Riesgo medio + bajo',
       value: `${metrics.riskPct.medio + metrics.riskPct.bajo}%`,
-      detail: 'Distribucion actual',
+      detail: 'Distribución actual',
       accent: 'lime',
       icon: 'chart',
     },
@@ -1756,7 +1757,7 @@ function ProfessorRiskDistributionCard({ metrics }) {
   return (
     <article className="card professor-block">
       <div className="section-header compact">
-        <h2>Distribucion de estudiantes por riesgo</h2>
+        <h2>Distribución de estudiantes por riesgo</h2>
       </div>
       <div className="professor-risk-list">
         {bars.map((bar) => (
@@ -1844,7 +1845,7 @@ function ProfessorAreasAnalysisCard({ areaAverages }) {
   return (
     <article className="card professor-block">
       <div className="section-header compact">
-        <h2>Analisis por areas del grupo</h2>
+        <h2>Análisis por áreas del grupo</h2>
       </div>
       <div className="professor-areas-list">
         {areaAverages.map((area) => (
@@ -1865,7 +1866,7 @@ function ProfessorInsightsCard({ insights }) {
   return (
     <article className="card professor-block">
       <div className="section-header compact">
-        <h2>Insights automaticos</h2>
+        <h2>Insights automáticos</h2>
       </div>
       <ul className="professor-list-block">
         {insights.map((insight) => (
@@ -1895,7 +1896,7 @@ function ProfessorPeriodComparisonCard({ comparison }) {
   return (
     <article className="card professor-block">
       <div className="section-header compact">
-        <h2>Comparacion entre periodos</h2>
+        <h2>Comparación entre períodos</h2>
       </div>
       <div className="student-comparison-metrics">
         <div>
@@ -1927,14 +1928,14 @@ function ProfessorModelExecutionCard() {
   return (
     <article className="card professor-block professor-model-run">
       <div>
-        <p className="next-step-kicker">Ejecucion del modelo</p>
-        <h2>Actualiza la prediccion del grupo</h2>
+        <p className="next-step-kicker">Ejecución del modelo</p>
+        <h2>Actualiza la predicción del grupo</h2>
         <p className="student-interpretation">
-          Recalcula resultados simulados para revisar cambios en riesgo y desempeno por areas.
+          Recalcula resultados simulados para revisar cambios en riesgo y desempeño por áreas.
         </p>
       </div>
       <button className="auth-button" type="button">
-        Ejecutar prediccion
+        Ejecutar predicción
       </button>
     </article>
   )
@@ -1994,44 +1995,44 @@ function AuthLayout({ eyebrow, children }) {
             <span className="auth-kicker">{eyebrow || 'Proyecto'}</span>
             <h1>ProScore Analizer</h1>
             <p className="auth-description">
-              Se desarrollara un sistema predictivo de clasificacion supervisada
-              para la estimacion del desempeno de estudiantes en las pruebas Saber
-              Pro, utilizando una arquitectura hibrida basada en Regresion
-              Logistica Multinomial y Gradient Boosting. El modelo tendra como
-              variable objetivo la clasificacion del rendimiento academico en
-              diferentes categorias de desempeno (bajo, medio y alto), a partir
-              de variables predictoras de caracter academico, socioeconomico y
-              demografico, incluyendo promedio acumulado, estrato socioeconomico,
-              programa academico, genero, edad, antecedentes academicos, acceso a
-              recursos tecnologicos y habitos de estudio.
+              Se desarrollará un sistema predictivo de clasificación supervisada
+              para la estimación del desempeño de estudiantes en las pruebas Saber
+              Pro, utilizando una arquitectura híbrida basada en Regresión
+              Logística Multinomial y Gradient Boosting. El modelo tendrá como
+              variable objetivo la clasificación del rendimiento académico en
+              diferentes categorías de desempeño (bajo, medio y alto), a partir
+              de variables predictoras de carácter académico, socioeconómico y
+              demográfico, incluyendo promedio acumulado, estrato socioeconómico,
+              programa académico, género, edad, antecedentes académicos, acceso a
+              recursos tecnológicos y hábitos de estudio.
             </p>
             <p className="auth-description">
-              El flujo de procesamiento contempla las etapas de extraccion,
-              integracion y depuracion de datos, tratamiento de valores
-              faltantes, deteccion de anomalias, codificacion de variables
-              categoricas mediante tecnicas de encoding y escalamiento de
-              variables numericas cuando sea requerido. Como primera fase, se
-              implementara una Regresion Logistica Multiple como modelo base
+              El flujo de procesamiento contempla las etapas de extracción,
+              integración y depuración de datos, tratamiento de valores
+              faltantes, detección de anomalías, codificación de variables
+              categóricas mediante técnicas de encoding y escalamiento de
+              variables numéricas cuando sea requerido. Como primera fase, se
+              implementará una Regresión Logística Múltiple como modelo base
               para obtener probabilidades de pertenencia a cada clase y analizar
-              la relevancia estadistica de las variables independientes.
-              Posteriormente, se entrenara un modelo Gradient Boosting para
+              la relevancia estadística de las variables independientes.
+              Posteriormente, se entrenará un modelo Gradient Boosting para
               capturar patrones no lineales, interacciones complejas y reducir
               el error residual generado por el clasificador inicial.
             </p>
             <p className="auth-description">
-              Adicionalmente, se evaluara una estrategia de Stacking donde las
-              probabilidades generadas por la Regresion Logistica seran
-              utilizadas como caracteristicas adicionales para el modelo de
+              Adicionalmente, se evaluará una estrategia de Stacking donde las
+              probabilidades generadas por la Regresión Logística serán
+              utilizadas como características adicionales para el modelo de
               Gradient Boosting, conformando una arquitectura de ensamble
-              orientada a maximizar el desempeno predictivo. La validacion del
-              sistema se realizara mediante particionamiento de datos en
-              conjuntos de entrenamiento y prueba, complementado con validacion
-              cruzada, utilizando metricas de evaluacion como Accuracy,
-              Precision, Recall, F1-Score, ROC-AUC y Matriz de Confusion. El
+              orientada a maximizar el desempeño predictivo. La validación del
+              sistema se realizará mediante particionamiento de datos en
+              conjuntos de entrenamiento y prueba, complementado con validación
+              cruzada, utilizando métricas de evaluación como Accuracy,
+              Precisión, Recall, F1-Score, ROC-AUC y Matriz de Confusión. El
               objetivo final es construir un modelo robusto, interpretable y
               escalable que permita identificar tempranamente factores asociados
               al rendimiento en las pruebas Saber Pro y generar predicciones
-              confiables que apoyen la toma de decisiones academicas e
+              confiables que apoyen la toma de decisiones académicas e
               institucionales.
             </p>
           </div>
@@ -2121,7 +2122,7 @@ function LoginForm({ onLogin }) {
   }
 
   return (
-    <AuthLayout eyebrow="Inicio de sesion">
+    <AuthLayout eyebrow="Inicio de sesión">
       <div className="auth-brand" aria-label="SION">
         <div className="auth-brand-mark" aria-hidden="true">
           <span />
@@ -2132,14 +2133,14 @@ function LoginForm({ onLogin }) {
       <div className="auth-form-header">
         <h2>Hola, bienvenido!</h2>
         <p>
-          Accede a tu cuenta ingresando tu usuario o numero de documento y tu contrasena en los
+          Accede a tu cuenta ingresando tu usuario o número de documento y tu contraseña en los
           campos indicados.
         </p>
       </div>
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <label className="auth-label" htmlFor="login-identifier">
-          Correo electronico *
+          Correo electrónico *
         </label>
         <input
           id="login-identifier"
@@ -2154,14 +2155,14 @@ function LoginForm({ onLogin }) {
         />
 
         <label className="auth-label" htmlFor="login-password">
-          Contrasena *
+          Contraseña *
         </label>
         <div className="auth-password-field">
           <input
             id="login-password"
             className="auth-input"
             type={showPassword ? 'text' : 'password'}
-            placeholder="Introduce tu contrasena"
+            placeholder="Introduce tu contraseña"
             value={formData.password}
             onChange={(event) =>
               setFormData((current) => ({ ...current, password: event.target.value }))
@@ -2172,7 +2173,7 @@ function LoginForm({ onLogin }) {
             className="password-toggle"
             type="button"
             onClick={() => setShowPassword((current) => !current)}
-            aria-label={showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+            aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           >
             {showPassword ? '🙈' : '👁'}
           </button>
@@ -2188,7 +2189,7 @@ function LoginForm({ onLogin }) {
             />
             <span>Mantenerme conectado</span>
           </label>
-          <NavLink to="/forgot-password">Has olvidado tu contrasena?</NavLink>
+          <NavLink to="/forgot-password">Has olvidado tu contraseña?</NavLink>
         </div>
 
         {feedback ? (
@@ -2245,8 +2246,8 @@ function LoginForm({ onLogin }) {
 
       <div className="auth-links single-link login-links">
         <p className="auth-hint">
-          Ingresa con tu <strong>correo electronico</strong> y tu{' '}
-          <strong>numero de documento</strong> como contrasena. Si aun no
+          Ingresa con tu <strong>correo electrónico</strong> y tu{' '}
+          <strong>número de documento</strong> como contraseña. Si aún no
           tienes acceso, contacta al administrador de tu programa.
         </p>
       </div>
@@ -2271,9 +2272,9 @@ function ForgotPasswordForm({ onRecover }) {
   }
 
   return (
-    <AuthLayout eyebrow="Recuperacion">
+    <AuthLayout eyebrow="Recuperación">
       <div className="auth-form-header">
-        <h2>Olvide mi contrasena</h2>
+        <h2>Olvidé mi contraseña</h2>
         <p>Ingresa tu correo para confirmar que existe en el sistema local.</p>
       </div>
 
@@ -2285,7 +2286,7 @@ function ForgotPasswordForm({ onRecover }) {
           id="forgot-identifier"
           className="auth-input"
           type="text"
-          placeholder="nombre@correo.com o numero de documento"
+          placeholder="nombre@correo.com o número de documento"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
@@ -2321,27 +2322,27 @@ function AccountSettingsModal({ user, onClose }) {
     if (savingPw) return
     setPwFeedback(null)
     if (!pwForm.currentPassword || !pwForm.newPassword) {
-      setPwFeedback({ ok: false, message: 'Completa los campos de contrasena.' })
+      setPwFeedback({ ok: false, message: 'Completa los campos de contraseña.' })
       return
     }
     if (pwForm.newPassword.length < 6) {
       setPwFeedback({
         ok: false,
-        message: 'La nueva contrasena debe tener al menos 6 caracteres.',
+        message: 'La nueva contraseña debe tener al menos 6 caracteres.',
       })
       return
     }
     if (pwForm.newPassword !== pwForm.confirm) {
       setPwFeedback({
         ok: false,
-        message: 'La confirmacion no coincide con la nueva contrasena.',
+        message: 'La confirmación no coincide con la nueva contraseña.',
       })
       return
     }
     if (pwForm.newPassword === pwForm.currentPassword) {
       setPwFeedback({
         ok: false,
-        message: 'La nueva contrasena debe ser distinta a la actual.',
+        message: 'La nueva contraseña debe ser distinta a la actual.',
       })
       return
     }
@@ -2354,11 +2355,11 @@ function AccountSettingsModal({ user, onClose }) {
       })
       if (!res.ok) {
         setPwFeedback({ ok: false, message: res.message || 'No se pudo cambiar.' })
-        toast.error(res.message || 'No se pudo cambiar la contrasena.')
+        toast.error(res.message || 'No se pudo cambiar la contraseña.')
         return
       }
-      setPwFeedback({ ok: true, message: 'Contrasena actualizada.' })
-      toast.success('Contrasena actualizada.')
+      setPwFeedback({ ok: true, message: 'Contraseña actualizada.' })
+      toast.success('Contraseña actualizada.')
       setPwForm({ currentPassword: '', newPassword: '', confirm: '' })
     } finally {
       setSavingPw(false)
@@ -2371,7 +2372,7 @@ function AccountSettingsModal({ user, onClose }) {
         <header className="account-modal-header">
           <div>
             <p className="banner-kicker">Mi cuenta</p>
-            <h2>Configuracion de la cuenta</h2>
+            <h2>Configuración de la cuenta</h2>
           </div>
           <button
             type="button"
@@ -2405,16 +2406,16 @@ function AccountSettingsModal({ user, onClose }) {
           </div>
           <p className="student-interpretation" style={{ marginTop: '0.75rem' }}>
             El nombre y el documento son datos institucionales y no se pueden
-            modificar desde aqui. Si necesitas actualizarlos, contacta al
+            modificar desde aquí. Si necesitas actualizarlos, contacta al
             administrador.
           </p>
         </section>
 
         <section className="account-section">
-          <h3>Cambiar contrasena</h3>
+          <h3>Cambiar contraseña</h3>
           <form className="profile-form" onSubmit={handleChangePassword}>
             <label className="auth-label" htmlFor="pw-current">
-              Contrasena actual
+              Contraseña actual
             </label>
             <input
               id="pw-current"
@@ -2427,7 +2428,7 @@ function AccountSettingsModal({ user, onClose }) {
               required
             />
             <label className="auth-label" htmlFor="pw-new">
-              Nueva contrasena
+              Nueva contraseña
             </label>
             <input
               id="pw-new"
@@ -2441,7 +2442,7 @@ function AccountSettingsModal({ user, onClose }) {
               required
             />
             <label className="auth-label" htmlFor="pw-confirm">
-              Confirmar nueva contrasena
+              Confirmar nueva contraseña
             </label>
             <input
               id="pw-confirm"
@@ -2459,7 +2460,7 @@ function AccountSettingsModal({ user, onClose }) {
             ) : null}
             <div className="form-actions">
               <button className="auth-button" type="submit" disabled={savingPw}>
-                {savingPw ? 'Cambiando…' : 'Cambiar contrasena'}
+                {savingPw ? 'Cambiando…' : 'Cambiar contraseña'}
               </button>
             </div>
           </form>
@@ -2485,6 +2486,22 @@ function DashboardShell({
   // En movil el menu lateral es un cajon deslizable (ver la media query de
   // 820px en App.css). En escritorio el estado no tiene efecto visible.
   const [navOpen, setNavOpen] = useState(false)
+  // Nombre del modelo que esta sirviendo el backend (ej. "saberpro-v2").
+  // Se muestra bajo el logo. Si el health check no responde, se deja el
+  // nombre del modelo vigente para no dejar el rotulo vacio.
+  const [modelName, setModelName] = useState('saberpro-v2')
+
+  useEffect(() => {
+    let vigente = true
+    apiHealth()
+      .then((res) => {
+        if (vigente && res?.model_version) setModelName(res.model_version)
+      })
+      .catch(() => {})
+    return () => {
+      vigente = false
+    }
+  }, [])
 
   // Con el cajon abierto, Escape lo cierra.
   useEffect(() => {
@@ -2540,13 +2557,13 @@ function DashboardShell({
             className="logout-button"
             type="button"
             onClick={handleLogout}
-            title="Cerrar sesion"
-            aria-label="Cerrar sesion"
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
           >
             <span className="btn-icon">
               <Icon name="logout" size={16} />
             </span>
-            <span className="btn-label">Cerrar sesion</span>
+            <span className="btn-label">Cerrar sesión</span>
           </button>
         </div>
       </header>
@@ -2558,7 +2575,7 @@ function DashboardShell({
       <aside className={`sidebar${navOpen ? ' open' : ''}`} id="app-sidebar">
         <div className="logo-wrap">
           <div className="logo-name">Saber Pro</div>
-          <div className="logo-sub">PREDICTOR IA</div>
+          <div className="logo-sub">{modelName}</div>
           <div className="logo-dept">{roleSettings.department}</div>
           <button
             className="sidebar-close"
@@ -2594,7 +2611,7 @@ function DashboardShell({
             <div className="user-name">{user.username}</div>
             <div className="user-role">
               {roleSettings.label}
-              {user.role === 'rector' ? '' : ` · ${getProgramLabel(user.program)}`}
+              {user.role === 'coordinador' ? '' : ` · ${getProgramLabel(user.program)}`}
             </div>
           </div>
         </div>
@@ -2633,20 +2650,52 @@ function MetricsGrid({ user, records, selectedProgram }) {
   )
 }
 
+// Selector de semestre para los paneles que listan toda la cohorte
+// (coordinador y decano). Las opciones llegan del backend.
+function SemestreFilter({ id, value, onChange, semestres = [] }) {
+  return (
+    <div className="data-table-filter">
+      <label htmlFor={id} className="auth-label" style={{ margin: 0 }}>
+        Semestre
+      </label>
+      <select
+        id={id}
+        className="auth-input auth-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="all">Todos los semestres</option>
+        {semestres.map((n) => (
+          <option key={n} value={n}>
+            Semestre {n}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 function CohortPanel({ user, allowProgramFilter = false }) {
   const [program, setProgram] = useState(
     user.program === 'all' ? 'all' : user.program,
   )
+  // Filtro por semestre: 'all' o el numero (1-12). Se aplica en el
+  // servidor para que la tabla y las tarjetas de indicadores coincidan.
+  const [semestre, setSemestre] = useState('all')
   const [data, setData] = useState({
     status: 'loading',
     students: [],
     metrics: null,
     program: program,
+    semestres: [],
   })
 
   useEffect(() => {
     let alive = true
-    apiGetCohort(allowProgramFilter ? program : undefined).then((res) => {
+    apiGetCohort(
+      allowProgramFilter ? program : undefined,
+      semestre === 'all' ? null : semestre,
+    ).then((res) => {
       if (!alive) return
       if (!res.ok) {
         setData({
@@ -2654,6 +2703,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
           students: [],
           metrics: null,
           program,
+          semestres: [],
           error: res.message,
         })
         return
@@ -2663,16 +2713,17 @@ function CohortPanel({ user, allowProgramFilter = false }) {
         students: res.students || [],
         metrics: res.metrics || null,
         program: res.program || program,
+        semestres: res.semestres || [],
       })
     })
     return () => {
       alive = false
     }
-  }, [program, allowProgramFilter])
+  }, [program, semestre, allowProgramFilter])
 
   const programLabel =
     data.program === 'all'
-      ? 'todas las ingenierias'
+      ? 'todas las ingenierías'
       : getProgramLabel(data.program)
 
   return (
@@ -2686,7 +2737,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
             style={{ margin: '6px 0 0', maxWidth: 720 }}
           >
             Listado en vivo de estudiantes registrados en el sistema y su
-            prediccion mas reciente para {programLabel}.
+            predicción más reciente para {programLabel}.
           </p>
         </div>
         {allowProgramFilter ? (
@@ -2700,7 +2751,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
               value={program}
               onChange={(e) => setProgram(e.target.value)}
             >
-              <option value="sistemas">Ingenieria de Sistemas</option>
+              <option value="sistemas">Ingeniería de Sistemas</option>
             </select>
           </div>
         ) : null}
@@ -2729,10 +2780,10 @@ function CohortPanel({ user, allowProgramFilter = false }) {
                 <span className="value">
                   {data.metrics.promedioPuntaje ?? '—'}
                 </span>
-                <span className="hint">prediccion del modelo</span>
+                <span className="hint">predicción del modelo</span>
               </div>
               <div className="cohort-metric-card">
-                <span className="label">Distribucion por clase</span>
+                <span className="label">Distribución por clase</span>
                 <div className="cohort-distribution">
                   <span className="chip alto">Alto · {data.metrics.distribucion.alto}</span>
                   <span className="chip medio">Medio · {data.metrics.distribucion.medio}</span>
@@ -2744,13 +2795,22 @@ function CohortPanel({ user, allowProgramFilter = false }) {
 
           {data.students.length === 0 ? (
             <p className="student-interpretation">
-              Aun no hay estudiantes registrados en este alcance.
+              Aún no hay estudiantes registrados en este alcance.
             </p>
           ) : (
             <DataTable
               rows={data.students}
               searchFields={['documento', 'username', 'email']}
-              searchPlaceholder="Buscar por nombre, documento o correo"
+              numericSearchField="semestre"
+              searchPlaceholder="Buscar por nombre, documento, correo o semestre"
+              extraFilter={
+                <SemestreFilter
+                  id="cohort-semestre"
+                  value={semestre}
+                  onChange={setSemestre}
+                  semestres={data.semestres}
+                />
+              }
               defaultPageSize={25}
               rowKey={(s) => s.id}
               rowClassName={(s) => (s.completed ? '' : 'pending')}
@@ -2794,7 +2854,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
                 },
                 {
                   key: 'nivelIngles',
-                  label: 'Ingles',
+                  label: 'Inglés',
                   render: (s) => s.nivelIngles ?? '—',
                 },
               ]}
@@ -2806,7 +2866,7 @@ function CohortPanel({ user, allowProgramFilter = false }) {
   )
 }
 
-function RectorView({ user, onLogout, onUserUpdated }) {
+function CoordinadorView({ user, onLogout, onUserUpdated }) {
   const [activeNavIndex, setActiveNavIndex] = useState(0)
   // Solo hay un programa academico (sistemas) — el selector se removio del topbar.
   const [selectedProgram] = useState('sistemas')
@@ -2822,25 +2882,25 @@ function RectorView({ user, onLogout, onUserUpdated }) {
       onNavSelect={setActiveNavIndex}
     >
       {activeNavIndex === 0 ? (
-        <RectorPanelSection
+        <CoordinadorPanelSection
           user={user}
           selectedProgram={selectedProgram}
         />
       ) : null}
       {activeNavIndex === 1 ? (
-        <RectorMetasSection
+        <CoordinadorMetasSection
           user={user}
           selectedProgram={selectedProgram}
         />
       ) : null}
       {activeNavIndex === 2 ? (
-        <RectorComparativoSection
+        <CoordinadorComparativoSection
           user={user}
           selectedProgram={selectedProgram}
         />
       ) : null}
       {activeNavIndex === 3 ? (
-        <RectorReportesSection
+        <CoordinadorReportesSection
           user={user}
           selectedProgram={selectedProgram}
         />
@@ -2850,27 +2910,54 @@ function RectorView({ user, onLogout, onUserUpdated }) {
 }
 
 // Hook compartido: trae la cohorte de /cohort/students una sola vez por programa.
-function useRectorCohort(program) {
-  const [state, setState] = useState({ status: 'loading', students: [], metrics: null, error: null })
+function useCoordinadorCohort(program, semestre) {
+  const [state, setState] = useState({
+    status: 'loading',
+    students: [],
+    metrics: null,
+    semestres: [],
+    error: null,
+  })
   useEffect(() => {
     let cancelled = false
-    apiGetCohort(program === 'all' ? 'all' : program)
+    apiGetCohort(
+      program === 'all' ? 'all' : program,
+      semestre === 'all' || semestre === undefined ? null : semestre,
+    )
       .then((res) => {
         if (cancelled) return
         if (!res.ok) {
-          setState({ status: 'error', students: [], metrics: null, error: res.message || 'Error' })
+          setState({
+            status: 'error',
+            students: [],
+            metrics: null,
+            semestres: [],
+            error: res.message || 'Error',
+          })
           return
         }
-        setState({ status: 'ready', students: res.students || [], metrics: res.metrics || null, error: null })
+        setState({
+          status: 'ready',
+          students: res.students || [],
+          metrics: res.metrics || null,
+          semestres: res.semestres || [],
+          error: null,
+        })
       })
       .catch((err) => {
         if (cancelled) return
-        setState({ status: 'error', students: [], metrics: null, error: err.message || 'Error de red' })
+        setState({
+          status: 'error',
+          students: [],
+          metrics: null,
+          semestres: [],
+          error: err.message || 'Error de red',
+        })
       })
     return () => {
       cancelled = true
     }
-  }, [program])
+  }, [program, semestre])
   return state
 }
 
@@ -2880,10 +2967,10 @@ function avgOf(list, fn) {
   return xs.reduce((a, b) => a + b, 0) / xs.length
 }
 
-// Helper top-level: descargar CSV de cohorte rector. Se mantiene fuera de los
+// Helper top-level: descargar CSV de cohorte del coordinador. Se mantiene fuera de los
 // componentes para evitar que el linter (react-hooks/purity) interprete la
 // llamada a Date.now() como impureza durante el render.
-function descargarRectorCsv(inScope, selectedProgram) {
+function descargarCoordinadorCsv(inScope, selectedProgram) {
   const rows = [
     ['documento', 'nombre', 'programa', 'completado', 'puntaje_estimado', 'clase', 'asistencia', 'nivel_ingles'],
     ...inScope.map((s) => [
@@ -2904,7 +2991,7 @@ function descargarRectorCsv(inScope, selectedProgram) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `rector_${selectedProgram}_${Date.now()}.csv`
+  a.download = `coordinador_${selectedProgram}_${Date.now()}.csv`
   document.body.appendChild(a)
   a.click()
   a.remove()
@@ -2936,8 +3023,8 @@ function bucketize(students) {
   }
 }
 
-function RectorPanelSection({ user, selectedProgram }) {
-  const { status, students, metrics, error } = useRectorCohort(selectedProgram)
+function CoordinadorPanelSection({ user, selectedProgram }) {
+  const { status, students, metrics, error } = useCoordinadorCohort(selectedProgram)
   const visibleSummaries = useMemo(() => {
     if (status !== 'ready') return []
     const programs = [selectedProgram || 'sistemas']
@@ -2964,7 +3051,7 @@ function RectorPanelSection({ user, selectedProgram }) {
 
       <section className="welcome-banner card">
         <div>
-          <p className="banner-kicker">Vision institucional</p>
+          <p className="banner-kicker">Visión institucional</p>
           <h1>{roleHomeTitle(user, selectedProgram)}</h1>
           <p className="banner-text">{roleHomeText(user, selectedProgram)}</p>
         </div>
@@ -2981,7 +3068,7 @@ function RectorPanelSection({ user, selectedProgram }) {
       <section className="grid-2 content-grid-dashboard">
         <article className="card">
           <div className="section-header">
-            <h2>Desempeno por programa</h2>
+            <h2>Desempeño por programa</h2>
             <span className="live-chip">Institucional</span>
           </div>
           {status === 'error' ? (
@@ -3021,10 +3108,10 @@ function RectorPanelSection({ user, selectedProgram }) {
 
         <article className="card">
           <div className="section-header compact">
-            <h2>Prioridades rectorales</h2>
+            <h2>Prioridades del programa</h2>
           </div>
           {status === 'ready' ? (
-            <RectorPrioritiesList
+            <CoordinadorPrioritiesList
               students={students}
               selectedProgram={selectedProgram}
             />
@@ -3037,7 +3124,7 @@ function RectorPanelSection({ user, selectedProgram }) {
   )
 }
 
-function RectorPrioritiesList({ students, selectedProgram }) {
+function CoordinadorPrioritiesList({ students, selectedProgram }) {
   const inScope =
     selectedProgram === 'all'
       ? students
@@ -3051,31 +3138,31 @@ function RectorPrioritiesList({ students, selectedProgram }) {
 
   const cards = [
     {
-      title: 'Calidad academica',
+      title: 'Calidad académica',
       text:
         conPerfil === 0
-          ? 'Aun no hay estudiantes con perfil completo. La cobertura del modelo es del 0%.'
+          ? 'Aún no hay estudiantes con perfil completo. La cobertura del modelo es del 0%.'
           : `${conPerfil} de ${total} estudiantes tienen perfil completo (${Math.round(
               (conPerfil / total) * 100,
             )}%). El siguiente paso es promover el onboarding entre los ${sinPerfil} faltantes.`,
     },
     {
-      title: 'Intervencion focalizada',
+      title: 'Intervención focalizada',
       text:
         riesgoAlto > 0
-          ? `${riesgoAlto} estudiantes estan en riesgo alto. Priorizar acompanamiento y simulacros para este grupo.`
+          ? `${riesgoAlto} estudiantes están en riesgo alto. Priorizar acompañamiento y simulacros para este grupo.`
           : 'No se detectan estudiantes en riesgo alto por ahora. Mantener seguimiento preventivo sobre los de riesgo medio.',
     },
     {
       title: 'Cobertura del modelo',
       text:
         sinPerfil > 0
-          ? `${sinPerfil} estudiantes aun no completaron el perfil institucional. La prediccion no esta disponible hasta que lo hagan.`
+          ? `${sinPerfil} estudiantes aún no completaron el perfil institucional. La predicción no está disponible hasta que lo hagan.`
           : sinPrediccion > 0
-            ? `Todos los estudiantes en el ambito seleccionado tienen perfil institucional. ${sinPrediccion} de ellos (${Math.round(
+            ? `Todos los estudiantes en el ámbito seleccionado tienen perfil institucional. ${sinPrediccion} de ellos (${Math.round(
                 (sinPrediccion / total) * 100,
-              )}%) aun no tienen historial academico por ser de primer semestre, asi que el modelo todavia no les emite prediccion.`
-            : 'Todos los estudiantes en el ambito seleccionado ya tienen perfil completo y prediccion del modelo.',
+              )}%) aún no tienen historial académico por ser de primer semestre, así que el modelo todavía no les emite predicción.`
+            : 'Todos los estudiantes en el ámbito seleccionado ya tienen perfil completo y predicción del modelo.',
     },
   ]
 
@@ -3089,8 +3176,8 @@ function RectorPrioritiesList({ students, selectedProgram }) {
       ))}
       {sinPrediccion > 0 ? (
         <p className="student-interpretation" style={{ margin: 0 }}>
-          Ademas, {sinPrediccion} estudiantes con perfil completo aun no tienen una
-          prediccion registrada.
+          Además, {sinPrediccion} estudiantes con perfil completo aún no tienen una
+          predicción registrada.
         </p>
       ) : null}
     </div>
@@ -3100,8 +3187,8 @@ function RectorPrioritiesList({ students, selectedProgram }) {
 // =========================
 // Seccion 1: Metas estrategicas
 // =========================
-function RectorMetasSection({ selectedProgram }) {
-  const { status, students, error } = useRectorCohort(selectedProgram)
+function CoordinadorMetasSection({ selectedProgram }) {
+  const { status, students, error } = useCoordinadorCohort(selectedProgram)
   const inScope =
     selectedProgram === 'all'
       ? students
@@ -3152,8 +3239,8 @@ function RectorMetasSection({ selectedProgram }) {
     <section style={{ display: 'grid', gap: '1rem' }}>
       <section className="welcome-banner card">
         <div>
-          <p className="banner-kicker">Plan estrategico</p>
-          <h1>Metas estrategicas del periodo</h1>
+          <p className="banner-kicker">Plan estratégico</p>
+          <h1>Metas estratégicas del período</h1>
           <p className="banner-text">
             Seguimiento de los indicadores clave para el programa
             {' '}
@@ -3221,12 +3308,12 @@ function RectorMetasSection({ selectedProgram }) {
 // =========================
 // Seccion 2: Comparativo
 // =========================
-function RectorComparativoSection() {
-  const sistemas = useRectorCohort('sistemas')
+function CoordinadorComparativoSection() {
+  const sistemas = useCoordinadorCohort('sistemas')
   const isReady = sistemas.status === 'ready'
 
   const programas = [
-    { value: 'sistemas', label: 'Ingenieria de Sistemas', state: sistemas },
+    { value: 'sistemas', label: 'Ingeniería de Sistemas', state: sistemas },
   ]
   const visible = programas
 
@@ -3237,7 +3324,7 @@ function RectorComparativoSection() {
           <p className="banner-kicker">Comparativo</p>
           <h1>Cohorte de Sistemas</h1>
           <p className="banner-text">
-            Indicadores de la ingenieria evaluada con la cohorte real.
+            Indicadores de la ingeniería evaluada con la cohorte real.
           </p>
         </div>
       </section>
@@ -3289,7 +3376,7 @@ function RectorComparativoSection() {
                   ))}
                 </tr>
                 <tr>
-                  <td>Con prediccion</td>
+                  <td>Con predicción</td>
                   {visible.map((p) => (
                     <td key={p.value} className="table-code">{bucketize(p.state.students).conPrediccion}</td>
                   ))}
@@ -3334,8 +3421,8 @@ function RectorComparativoSection() {
 // =========================
 // Seccion 3: Reportes
 // =========================
-function RectorReportesSection({ selectedProgram }) {
-  const { status, students, error } = useRectorCohort(selectedProgram)
+function CoordinadorReportesSection({ selectedProgram }) {
+  const { status, students, error } = useCoordinadorCohort(selectedProgram)
   const inScope =
     selectedProgram === 'all'
       ? students
@@ -3353,7 +3440,7 @@ function RectorReportesSection({ selectedProgram }) {
     .slice(0, 10)
 
   function descargarCsv() {
-    descargarRectorCsv(inScope, selectedProgram)
+    descargarCoordinadorCsv(inScope, selectedProgram)
   }
 
   return (
@@ -3363,7 +3450,7 @@ function RectorReportesSection({ selectedProgram }) {
           <p className="banner-kicker">Reportes</p>
           <h1>Vistas para toma de decisiones</h1>
           <p className="banner-text">
-            Distribucion de riesgo, top 5 de mayor riesgo y estudiantes sin perfil. Puedes
+            Distribución de riesgo, top 5 de mayor riesgo y estudiantes sin perfil. Puedes
             descargar la cohorte completa en CSV para trabajarla fuera del sistema.
           </p>
         </div>
@@ -3382,7 +3469,7 @@ function RectorReportesSection({ selectedProgram }) {
           <div className="grid-2">
             <article className="card">
               <div className="section-header compact">
-                <h2>Distribucion de riesgo</h2>
+                <h2>Distribución de riesgo</h2>
               </div>
               <div className="cohort-distribution" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <div className="kpi-card lime" style={{ marginBottom: 8 }}>
@@ -3414,7 +3501,7 @@ function RectorReportesSection({ selectedProgram }) {
                   <span className="value">{b.sinPerfil}</span>
                 </div>
                 <div className="cohort-metric-card">
-                  <span className="label">Con prediccion</span>
+                  <span className="label">Con predicción</span>
                   <span className="value">{b.conPrediccion}</span>
                 </div>
                 <div className="cohort-metric-card">
@@ -3431,7 +3518,7 @@ function RectorReportesSection({ selectedProgram }) {
             </div>
             {topRiesgo.length === 0 ? (
               <p className="student-interpretation">
-                Aun no hay estudiantes con prediccion registrada.
+                Aún no hay estudiantes con predicción registrada.
               </p>
             ) : (
               <table className="cohort-table">
@@ -3471,7 +3558,7 @@ function RectorReportesSection({ selectedProgram }) {
             </div>
             {sinPerfil.length === 0 ? (
               <p className="student-interpretation">
-                Todos los estudiantes en el ambito seleccionado ya completaron el perfil.
+                Todos los estudiantes en el ámbito seleccionado ya completaron el perfil.
               </p>
             ) : (
               <table className="cohort-table">
@@ -3573,13 +3660,18 @@ function DeanDashboardSection({ user, selectedProgram }) {
 }
 
 function DeanProgramasSection({ selectedProgram }) {
-  const { status, students, error } = useRectorCohort(selectedProgram)
+  // Filtro por semestre: 'all' o el numero (1-12).
+  const [semestre, setSemestre] = useState('all')
+  const { status, students, error, semestres } = useCoordinadorCohort(
+    selectedProgram,
+    semestre,
+  )
   const b = bucketize(students)
   return (
     <section style={{ display: 'grid', gap: '1rem' }}>
       <section className="welcome-banner card">
         <div>
-          <p className="banner-kicker">Programa academico</p>
+          <p className="banner-kicker">Programa académico</p>
           <h1>{getProgramLabel(selectedProgram)}</h1>
           <p className="banner-text">
             Listado completo de estudiantes matriculados en el programa, con su
@@ -3603,7 +3695,7 @@ function DeanProgramasSection({ selectedProgram }) {
               <span className="value">{b.conPerfil}</span>
             </div>
             <div className="cohort-metric-card">
-              <span className="label">Con prediccion</span>
+              <span className="label">Con predicción</span>
               <span className="value">{b.conPrediccion}</span>
             </div>
             <div className="cohort-metric-card">
@@ -3622,16 +3714,26 @@ function DeanProgramasSection({ selectedProgram }) {
               <DataTable
                 rows={students}
                 searchFields={['documento', 'username', 'email']}
-                searchPlaceholder="Buscar por documento, nombre o correo..."
+                numericSearchField="semestre"
+                searchPlaceholder="Buscar por documento, nombre, correo o semestre..."
+                extraFilter={
+                  <SemestreFilter
+                    id="decanos-semestre"
+                    value={semestre}
+                    onChange={setSemestre}
+                    semestres={semestres}
+                  />
+                }
                 defaultPageSize={25}
                 pageSizeOptions={[10, 25, 50, 100]}
-                emptyMessage="Sin coincidencias para la busqueda."
+                emptyMessage="Sin coincidencias para la búsqueda."
                 rowKey={(s) => s.id}
                 rowClassName={(s) => (!s.completed ? 'pending' : '')}
                 columns={[
                   { key: 'documento', label: 'Documento', className: 'table-code' },
                   { key: 'username', label: 'Nombre' },
                   { key: 'email', label: 'Correo' },
+                  { key: 'semestre', label: 'Semestre', render: (s) => s.semestre ?? '—' },
                   {
                     key: 'completed',
                     label: 'Perfil',
@@ -3666,7 +3768,7 @@ function DeanProgramasSection({ selectedProgram }) {
 }
 
 function DeanBenchmarkingSection({ selectedProgram }) {
-  const state = useRectorCohort(selectedProgram)
+  const state = useCoordinadorCohort(selectedProgram)
   const isReady = state.status === 'ready'
 
   return (
@@ -3704,7 +3806,7 @@ function DeanBenchmarkingSection({ selectedProgram }) {
                   <td className="table-code">{bucketize(state.students).conPerfil}</td>
                 </tr>
                 <tr>
-                  <td>Con prediccion</td>
+                  <td>Con predicción</td>
                   <td className="table-code">{bucketize(state.students).conPrediccion}</td>
                 </tr>
                 <tr>
@@ -3741,7 +3843,7 @@ function DeanBenchmarkingSection({ selectedProgram }) {
 }
 
 function DeanIndicadoresSection({ selectedProgram }) {
-  const { status, students, error } = useRectorCohort(selectedProgram)
+  const { status, students, error } = useCoordinadorCohort(selectedProgram)
   const inScope = students
   const b = bucketize(inScope)
   const total = inScope.length
@@ -3819,7 +3921,7 @@ function DeanIndicadoresSection({ selectedProgram }) {
           <div className="grid-2">
             <article className="card">
               <div className="section-header compact">
-                <h2>Distribucion de riesgo</h2>
+                <h2>Distribución de riesgo</h2>
               </div>
               <div className="cohort-distribution" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <div className="kpi-card lime" style={{ marginBottom: 8 }}>
@@ -3851,7 +3953,7 @@ function DeanIndicadoresSection({ selectedProgram }) {
                   <span className="value">{b.sinPerfil}</span>
                 </div>
                 <div className="cohort-metric-card">
-                  <span className="label">Con prediccion</span>
+                  <span className="label">Con predicción</span>
                   <span className="value">{b.conPrediccion}</span>
                 </div>
                 <div className="cohort-metric-card">
@@ -3868,7 +3970,7 @@ function DeanIndicadoresSection({ selectedProgram }) {
 }
 
 function DeanSummaryCards({ selectedProgram }) {
-  const { status, students } = useRectorCohort(selectedProgram)
+  const { status, students } = useCoordinadorCohort(selectedProgram)
   if (status !== 'ready') return null
   const b = bucketize(students)
   const total = students.length
@@ -3900,14 +4002,14 @@ function DeanSummaryCards({ selectedProgram }) {
         <span className="kpi-icon"><Icon name="warning" size={22} /></span>
         <span className="kpi-value">{b.riesgoAlto}</span>
         <span className="kpi-label">En riesgo alto</span>
-        <span className="kpi-delta">requieren intervencion prioritaria</span>
+        <span className="kpi-delta">requieren intervención prioritaria</span>
       </article>
     </section>
   )
 }
 
 function DeanTopStudentsTable({ selectedProgram }) {
-  const { status, students } = useRectorCohort(selectedProgram)
+  const { status, students } = useCoordinadorCohort(selectedProgram)
   if (status !== 'ready') {
     return <p className="student-interpretation">Cargando...</p>
   }
@@ -3922,7 +4024,7 @@ function DeanTopStudentsTable({ selectedProgram }) {
   if (conPrediccion.length === 0) {
     return (
       <p className="student-interpretation">
-        Aun no hay estudiantes con prediccion registrada en este programa.
+        Aún no hay estudiantes con predicción registrada en este programa.
       </p>
     )
   }
@@ -3953,7 +4055,7 @@ function DeanTopStudentsTable({ selectedProgram }) {
 }
 
 function DeanExecutiveReading({ selectedProgram }) {
-  const { status, students } = useRectorCohort(selectedProgram)
+  const { status, students } = useCoordinadorCohort(selectedProgram)
   if (status !== 'ready') {
     return <p className="student-interpretation">Cargando...</p>
   }
@@ -3976,16 +4078,16 @@ function DeanExecutiveReading({ selectedProgram }) {
         <p>
           {mejor
             ? `${mejor.username} (${mejor.documento}) lidera el ranking con un puntaje estimado de ${Math.round(mejor.puntajeEstimado)}.`
-            : 'Aun no hay estudiantes con prediccion registrada en el programa.'}
+            : 'Aún no hay estudiantes con predicción registrada en el programa.'}
         </p>
       </article>
       <article className="report-card">
-        <h3>Accion recomendada</h3>
+        <h3>Acción recomendada</h3>
         <p>
           {b.riesgoAlto > 0
             ? `Prioriza el acompanimiento a los ${b.riesgoAlto} estudiantes en riesgo alto y el cierre de los ${b.sinPerfil} perfiles pendientes.`
             : b.sinPerfil > 0
-            ? `No hay riesgo alto, pero ${b.sinPerfil} estudiantes aun no completan el perfil. Promueve el onboarding para liberar la prediccion.`
+            ? `No hay riesgo alto, pero ${b.sinPerfil} estudiantes aún no completan el perfil. Promueve el onboarding para liberar la predicción.`
             : 'Cobertura completa y sin riesgo alto detectado. Mantener seguimiento.'}
         </p>
       </article>
@@ -4023,10 +4125,10 @@ function ProfessorView({ user, onLogout, onUserUpdated }) {
     >
       <section className="card student-section-state">
         <div>
-          <p className="banner-kicker">Seccion activa</p>
+          <p className="banner-kicker">Sección activa</p>
           <h2>{professorSections[activeSectionIndex]}</h2>
           <p className="student-interpretation">
-            Vista docente para analizar el grupo, priorizar riesgos y tomar decisiones academicas.
+            Vista docente para analizar el grupo, priorizar riesgos y tomar decisiones académicas.
           </p>
         </div>
       </section>
@@ -4189,7 +4291,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
 
   return (
     <form className="profile-form" onSubmit={handleSubmit}>
-      <h3 className="form-group-title">Desempeno academico</h3>
+      <h3 className="form-group-title">Desempeño académico</h3>
       <div className="form-grid-2">
         <label className="form-field">
           <span>Promedio acumulado (0–5)</span>
@@ -4205,7 +4307,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
           />
         </label>
         <label className="form-field">
-          <span>Promedio en materias basicas</span>
+          <span>Promedio en materias básicas</span>
           <input
             className="auth-input"
             type="number"
@@ -4217,7 +4319,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
           />
         </label>
         <label className="form-field">
-          <span>Promedio en ingenieria</span>
+          <span>Promedio en ingeniería</span>
           <input
             className="auth-input"
             type="number"
@@ -4240,7 +4342,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
           />
         </label>
         <label className="form-field">
-          <span>% de creditos aprobados</span>
+          <span>% de créditos aprobados</span>
           <input
             className="auth-input"
             type="number"
@@ -4264,10 +4366,10 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
         </label>
       </div>
 
-      <h3 className="form-group-title">Contexto socioeconomico</h3>
+      <h3 className="form-group-title">Contexto socioeconómico</h3>
       <div className="form-grid-2">
         <label className="form-field">
-          <span>Estrato socioeconomico</span>
+          <span>Estrato socioeconómico</span>
           <select
             className="auth-input auth-select"
             value={form.estrato}
@@ -4306,10 +4408,10 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
         </label>
       </div>
 
-      <h3 className="form-group-title">Datos demograficos</h3>
+      <h3 className="form-group-title">Datos demográficos</h3>
       <div className="form-grid-2">
         <label className="form-field">
-          <span>Genero</span>
+          <span>Género</span>
           <select
             className="auth-input auth-select"
             value={form.genero}
@@ -4344,7 +4446,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
         </label>
       </div>
 
-      <h3 className="form-group-title">Habitos de estudio</h3>
+      <h3 className="form-group-title">Hábitos de estudio</h3>
       <div className="form-grid-2">
         <label className="form-field">
           <span>Horas de estudio por semana</span>
@@ -4359,7 +4461,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
           />
         </label>
         <label className="form-field">
-          <span>Nivel de ingles</span>
+          <span>Nivel de inglés</span>
           <select
             className="auth-input auth-select"
             value={form.nivel_ingles}
@@ -4408,7 +4510,7 @@ function StudentProfileForm({ initialValues, onSubmit, onCancel, busy, error }) 
           </button>
         ) : null}
         <button className="auth-button" type="submit" disabled={busy}>
-          {busy ? 'Guardando…' : 'Guardar y calcular prediccion'}
+          {busy ? 'Guardando…' : 'Guardar y calcular predicción'}
         </button>
       </div>
     </form>
@@ -4438,11 +4540,11 @@ function StudentOnboarding({ onComplete, initial }) {
     <section className="onboarding-wrap card">
       <div className="onboarding-header">
         <p className="banner-kicker">Bienvenido</p>
-        <h1>Cuentanos sobre ti para generar tu prediccion</h1>
+        <h1>Cuentanos sobre ti para generar tu predicción</h1>
         <p className="banner-text">
-          Estos datos alimentan el modelo predictivo del Saber Pro. Con tu informacion
-          academica, socioeconomica, demografica y tus habitos de estudio podremos
-          estimar tu nivel de desempeno (bajo, medio o alto) y entregarte
+          Estos datos alimentan el modelo predictivo del Saber Pro. Con tu información
+          académica, socioeconómica, demográfica y tus hábitos de estudio podremos
+          estimar tu nivel de desempeño (bajo, medio o alto) y entregarte
           recomendaciones personalizadas. Puedes actualizarlos cuando quieras.
         </p>
       </div>
@@ -4500,7 +4602,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
     return (
       <DashboardShell user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} searchPlaceholder="">
         <section className="card empty-state">
-          <p>Cargando tu informacion…</p>
+          <p>Cargando tu información…</p>
         </section>
       </DashboardShell>
     )
@@ -4537,17 +4639,17 @@ function StudentView({ user, onLogout, onUserUpdated }) {
         customNav={['Tu prediccion']}
       >
         <section className="card empty-state">
-          <h2>Aun no hay datos suficientes para predecir</h2>
+          <h2>Aún no hay datos suficientes para predecir</h2>
           <p className="student-interpretation">
-            Tu informacion institucional esta completa, pero todavia no tienes historial
-            academico registrado (lo normal si estas en tu primer semestre). Sin
-            promedios el modelo no puede estimar tu desempeno en Saber Pro: te
-            mostraria un resultado inventado en lugar de una prediccion.
+            Tu información institucional está completa, pero todavía no tienes historial
+            académico registrado (lo normal si estás en tu primer semestre). Sin
+            promedios el modelo no puede estimar tu desempeño en Saber Pro: te
+            mostraría un resultado inventado en lugar de una predicción.
           </p>
           <p className="student-interpretation">
-            En cuanto se registre tu primer promedio, tu prediccion aparecera aqui
-            automaticamente. Si ya cursaste materias y sigue asi, contacta al
-            administrador de tu programa para actualizar tu informacion.
+            En cuanto se registre tu primer promedio, tu predicción aparecerá aquí
+            automáticamente. Si ya cursaste materias y sigue así, contacta al
+            administrador de tu programa para actualizar tu información.
           </p>
         </section>
       </DashboardShell>
@@ -4565,7 +4667,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
   const riskLevel = prediction ? riskFromClase(prediction.clase) : 'medio'
   const riskLabel = prediction
     ? RISK_LABEL_FROM_CLASE[prediction.clase] || 'Riesgo medio'
-    : 'Sin clasificacion'
+    : 'Sin clasificación'
 
   const progress = predictions
     .slice(0, 5)
@@ -4586,11 +4688,11 @@ function StudentView({ user, onLogout, onUserUpdated }) {
     >
       <section className="card student-section-state">
         <div>
-          <p className="banner-kicker">Seccion activa</p>
+          <p className="banner-kicker">Sección activa</p>
           <h2>{activeSectionLabel}</h2>
           <p className="student-interpretation">
             Tus datos provienen del roster institucional del programa y son la
-            fuente de verdad para tu prediccion. Si necesitas corregirlos,
+            fuente de verdad para tu predicción. Si necesitas corregirlos,
             contacta al administrador de tu programa.
           </p>
         </div>
@@ -4603,8 +4705,8 @@ function StudentView({ user, onLogout, onUserUpdated }) {
               <p className="banner-kicker">Vista del estudiante</p>
               <h1>Hola, {user.username.split(' ')[0]}</h1>
               <p className="banner-text">
-                Tu desempeno proyectado en las pruebas Saber Pro y los factores
-                que mas estan influyendo en el resultado.
+                Tu desempeño proyectado en las pruebas Saber Pro y los factores
+                que más están influyendo en el resultado.
               </p>
             </div>
             <div className="welcome-chip">
@@ -4661,7 +4763,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                   </strong>
                 </div>
                 <div className="student-data-row">
-                  <span>Nivel de ingles</span>
+                  <span>Nivel de inglés</span>
                   <strong>{profile?.nivel_ingles ?? '—'}</strong>
                 </div>
               </div>
@@ -4694,8 +4796,8 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                 ))}
                 {!prediction ? (
                   <p className="student-interpretation">
-                    Aun no tenemos prediccion. Contacta al administrador de tu
-                    programa para verificar que estes en el roster institucional.
+                    Aún no tenemos predicción. Contacta al administrador de tu
+                    programa para verificar que estés en el roster institucional.
                   </p>
                 ) : null}
               </div>
@@ -4710,14 +4812,14 @@ function StudentView({ user, onLogout, onUserUpdated }) {
         <>
           <section className="welcome-banner card student-banner">
             <div>
-              <p className="banner-kicker">Mi prediccion</p>
+              <p className="banner-kicker">Mi predicción</p>
               <h1>
                 Puntaje estimado {prediction?.puntajeEstimado ?? '—'} sobre 300 · banda{' '}
                 {prediction?.clase ?? '—'}
               </h1>
               <p className="banner-text">
-                Desglose por areas del modelo, comparacion con la cohorte y
-                evolucion de tus calculos previos.
+                Desglose por áreas del modelo, comparación con la cohorte y
+                evolucion de tus cálculos previos.
               </p>
             </div>
           </section>
@@ -4760,7 +4862,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
             />
             <article className="card student-block">
               <div className="section-header compact">
-                <h2>Interpretacion automatica</h2>
+                <h2>Interpretación automática</h2>
               </div>
               <p className="student-interpretation">
                 {prediction
@@ -4772,7 +4874,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                     }. Eso lo ubica en la banda ${prediction.clase}, con una probabilidad del ${Math.round(
                       (prediction.probabilidad || 0) * 100,
                     )}% de caer en ella. El margen es amplio: el resultado real depende tambien de factores que no aparecen en tu historial academico, como la preparacion especifica para la prueba.`
-                  : 'Aun no hay prediccion. Llena tu perfil para generar el analisis.'}
+                  : 'Aún no hay predicción. Llena tu perfil para generar el análisis.'}
               </p>
               <div className="student-data-list">
                 <div className="student-data-row">
@@ -4780,7 +4882,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
                   <strong>{profile?.num_reprobadas ?? '—'}</strong>
                 </div>
                 <div className="student-data-row">
-                  <span>Avance en creditos</span>
+                  <span>Avance en créditos</span>
                   <strong>
                     {profile?.pct_creditos ? `${profile.pct_creditos}%` : '—'}
                   </strong>
@@ -4803,7 +4905,7 @@ function StudentView({ user, onLogout, onUserUpdated }) {
 // =====================================================================
 
 const ADMIN_ROLE_OPTIONS = [
-  { value: 'rector', label: 'Rector' },
+  { value: 'coordinador', label: 'Coordinador/a de programa' },
   { value: 'decano', label: 'Decano' },
   { value: 'administrador', label: 'Administrador' },
   { value: 'estudiante', label: 'Estudiante' },
@@ -4952,7 +5054,7 @@ class AdminErrorBoundary extends Component {
 // agregadas. Produce 2-3 frases segun los datos disponibles.
 function generateExecutiveAnalysis(metrics) {
   if (!metrics || metrics.totalEstudiantes === 0) {
-    return 'Aun no hay estudiantes registrados en la cohorte.'
+    return 'Aún no hay estudiantes registrados en la cohorte.'
   }
   const total = metrics.totalEstudiantes
   const conPerfil = metrics.conPerfil
@@ -4995,23 +5097,23 @@ function generateExecutiveAnalysis(metrics) {
   // Cobertura de prediccion
   if (conPrediccion === 0 && metrics.conPerfil > 0) {
     sentences.push(
-      'Ningun estudiante tiene prediccion del modelo todavia; puedes generarlas desde el panel de Analisis con "Recomputar predicciones".',
+      'Ningun estudiante tiene predicción del modelo todavía; puedes generarlas desde el panel de Análisis con "Recomputar predicciones".',
     )
   } else if (conPrediccion > 0 && conPrediccion < conPerfil) {
     const faltan = conPerfil - conPrediccion
     sentences.push(
-      `${conPrediccion} estudiantes (${pct.coberturaPrediccion ?? 0}% del total, ${Math.round((conPrediccion / Math.max(conPerfil, 1)) * 100)}% de los que tienen perfil) cuentan con prediccion del modelo.`,
+      `${conPrediccion} estudiantes (${pct.coberturaPrediccion ?? 0}% del total, ${Math.round((conPrediccion / Math.max(conPerfil, 1)) * 100)}% de los que tienen perfil) cuentan con predicción del modelo.`,
     )
     if (sinDatos > 0) {
       sentences.push(
-        `Los ${sinDatos} estudiantes restantes (${Math.round((sinDatos / Math.max(total, 1)) * 100)}% de la cohorte) todavia no tienen historial academico: son estudiantes de primer semestre que aun no han acumulado notas, asi que el modelo no emite prediccion para ellos hasta que tengan un promedio registrado.`,
+        `Los ${sinDatos} estudiantes restantes (${Math.round((sinDatos / Math.max(total, 1)) * 100)}% de la cohorte) todavía no tienen historial académico: son estudiantes de primer semestre que aún no han acumulado notas, así que el modelo no emite predicción para ellos hasta que tengan un promedio registrado.`,
       )
     } else if (faltan > 0) {
       sentences.push(`Faltan ${faltan} por procesar.`)
     }
   } else if (conPrediccion === conPerfil && conPerfil > 0) {
     sentences.push(
-      'Todos los estudiantes con perfil cuentan con una prediccion del modelo actualizada.',
+      'Todos los estudiantes con perfil cuentan con una predicción del modelo actualizada.',
     )
   }
 
@@ -5019,15 +5121,15 @@ function generateExecutiveAnalysis(metrics) {
   if (alto + medio + bajo > 0) {
     const predCount = alto + medio + bajo
     sentences.push(
-      `Sobre ${predCount} estudiantes evaluados, ${alto} estan en riesgo alto (${pct.riesgoAltoPct ?? 0}% del total), ${medio} en riesgo medio (${pct.riesgoMedioPct ?? 0}%) y ${bajo} en riesgo bajo (${pct.riesgoBajoPct ?? 0}%).`,
+      `Sobre ${predCount} estudiantes evaluados, ${alto} están en riesgo alto (${pct.riesgoAltoPct ?? 0}% del total), ${medio} en riesgo medio (${pct.riesgoMedioPct ?? 0}%) y ${bajo} en riesgo bajo (${pct.riesgoBajoPct ?? 0}%).`,
     )
     if (alto > 0) {
       sentences.push(
-        `Prioriza intervencion con los ${alto} estudiante${alto === 1 ? '' : 's'} en riesgo alto para reducir el riesgo de desercion antes del examen Saber Pro.`,
+        `Prioriza intervención con los ${alto} estudiante${alto === 1 ? '' : 's'} en riesgo alto para reducir el riesgo de desercion antes del examen Saber Pro.`,
       )
     } else {
       sentences.push(
-        `No se identificaron estudiantes en riesgo alto: la cohorte esta en una posicion saludable de cara a Saber Pro.`,
+        `No se identificaron estudiantes en riesgo alto: la cohorte está en una posición saludable de cara a Saber Pro.`,
       )
     }
   }
@@ -5038,7 +5140,7 @@ function generateExecutiveAnalysis(metrics) {
       metrics.promedioPuntaje >= 250 ? 'competitivo' :
       metrics.promedioPuntaje >= 200 ? 'moderado' : 'bajo'
     sentences.push(
-      `El promedio estimado de puntaje Saber Pro es de ${metrics.promedioPuntaje} puntos, lo que sugiere un desempeno ${nivel} frente a la media nacional.`,
+      `El promedio estimado de puntaje Saber Pro es de ${metrics.promedioPuntaje} puntos, lo que sugiere un desempeño ${nivel} frente a la media nacional.`,
     )
   }
 
@@ -5096,7 +5198,7 @@ function AdminComparativoSection() {
           <p className="banner-kicker">Comparativo institucional</p>
           <h2>Cohorte de Sistemas</h2>
           <p style={{ margin: '0.5rem 0 0', color: 'var(--text-soft)', fontSize: '0.92rem', maxWidth: 620 }}>
-            Indicadores agregados del programa academico, calculados en vivo desde la base de datos
+            Indicadores agregados del programa académico, calculados en vivo desde la base de datos
             institucional y las predicciones generadas por el modelo <code>real-data-v1</code>.
           </p>
         </div>
@@ -5130,7 +5232,7 @@ function AdminComparativoSection() {
             <article className="kpi-card violet">
               <div className="kpi-icon"><Icon name="target" size={22} /></div>
               <p className="kpi-value">{metrics.conPrediccion}</p>
-              <p className="kpi-label">Con prediccion del modelo</p>
+              <p className="kpi-label">Con predicción del modelo</p>
               <p className="kpi-detail">
                 {(metrics.porcentajes?.coberturaPrediccion ?? 0).toFixed(1)}% del total
               </p>
@@ -5147,28 +5249,28 @@ function AdminComparativoSection() {
               <div className="kpi-icon"><Icon name="info" size={22} /></div>
               <p className="kpi-value">{metrics.sinDatosSuficientes || 0}</p>
               <p className="kpi-label">Sin datos suficientes</p>
-              <p className="kpi-detail">Sin historial academico</p>
+              <p className="kpi-detail">Sin historial académico</p>
             </article>
           </section>
 
           {/* ---- 2) Distribucion de riesgo ---- */}
           <article className="card">
             <div className="section-header">
-              <h2>Distribucion de riesgo</h2>
+              <h2>Distribución de riesgo</h2>
               <span className="live-chip">{rsk.alto + rsk.medio + rsk.bajo} evaluados</span>
             </div>
 
             {rsk.alto + rsk.medio + rsk.bajo === 0 ? (
               <div className="data-table-empty">
-                <p>Aun no hay predicciones para esta cohorte.</p>
+                <p>Aún no hay predicciones para esta cohorte.</p>
                 <p className="student-interpretation" style={{ marginTop: '0.5rem' }}>
-                  Las predicciones se generan automaticamente al completar el perfil institucional,
-                  o puedes dispararlas manualmente desde el panel de Analisis del modelo.
+                  Las predicciones se generan automáticamente al completar el perfil institucional,
+                  o puedes dispararlas manualmente desde el panel de Análisis del modelo.
                 </p>
               </div>
             ) : (
               <>
-                <div className="risk-distribution-bar" aria-label="Distribucion de riesgo">
+                <div className="risk-distribution-bar" aria-label="Distribución de riesgo">
                   <div
                     className="risk-segment bajo"
                     style={{ width: `${((rsk.bajo || 0) / Math.max(evaluados, 1)) * 100}%` }}
@@ -5242,7 +5344,7 @@ function AdminComparativoSection() {
             <div className="section-header compact">
               <h2>
                 <Icon name="chart" size={18} />
-                <span style={{ marginLeft: '0.5rem' }}>Analisis ejecutivo</span>
+                <span style={{ marginLeft: '0.5rem' }}>Análisis ejecutivo</span>
               </h2>
             </div>
             <p className="comparativo-analysis-text">
@@ -5253,7 +5355,7 @@ function AdminComparativoSection() {
           {/* ---- 4) Tabla de metricas detalladas ---- */}
           <article className="card">
             <div className="section-header compact">
-              <h2>Metricas detalladas</h2>
+              <h2>Métricas detalladas</h2>
             </div>
             <table>
               <thead>
@@ -5284,7 +5386,7 @@ function AdminComparativoSection() {
                   </td>
                 </tr>
                 <tr>
-                  <td>Con prediccion del modelo</td>
+                  <td>Con predicción del modelo</td>
                   <td className="table-code">{metrics.conPrediccion}</td>
                   <td className="table-code">
                     {(metrics.porcentajes?.coberturaPrediccion ?? 0).toFixed(1)}%
@@ -5341,11 +5443,11 @@ function AdminComparativoSection() {
           <article className="card">
             <div className="section-header">
               <h2>Top estudiantes en riesgo</h2>
-              <span className="live-chip">5 con peor prediccion</span>
+              <span className="live-chip">5 con peor predicción</span>
             </div>
             {topRisk.length === 0 ? (
               <div className="data-table-empty">
-                <p>Aun no hay estudiantes con prediccion para mostrar el ranking de riesgo.</p>
+                <p>Aún no hay estudiantes con predicción para mostrar el ranking de riesgo.</p>
               </div>
             ) : (
               <table>
@@ -5578,9 +5680,9 @@ function AdminReportesSection() {
       <div className="cohort-toolbar">
         <div>
           <p className="banner-kicker">Reportes</p>
-          <h2>Cohorte y desempeno institucional</h2>
+          <h2>Cohorte y desempeño institucional</h2>
           <p style={{ margin: '0.5rem 0 0', color: 'var(--text-soft)', fontSize: '0.92rem', maxWidth: 720 }}>
-            Distribuciones academicas y demograficas de los estudiantes, calculadas en vivo
+            Distribuciones académicas y demográficas de los estudiantes, calculadas en vivo
             contra la base de datos institucional y las predicciones del modelo
             <code> real-data-v1</code>.
           </p>
@@ -5628,7 +5730,7 @@ function AdminReportesSection() {
             <article className="kpi-card violet">
               <div className="kpi-icon"><Icon name="target" size={22} /></div>
               <p className="kpi-value">{totalConPrediccion}</p>
-              <p className="kpi-label">Con prediccion del modelo</p>
+              <p className="kpi-label">Con predicción del modelo</p>
               <p className="kpi-detail">{pctValue(totalConPrediccion, total)}% de la cohorte</p>
             </article>
             <article className="kpi-card rose">
@@ -5645,7 +5747,7 @@ function AdminReportesSection() {
                   : '—'}
               </p>
               <p className="kpi-label">Promedio acumulado</p>
-              <p className="kpi-detail">Calificacion institucional</p>
+              <p className="kpi-detail">Calificación institucional</p>
             </article>
             <article className="kpi-card emerald">
               <div className="kpi-icon"><Icon name="chart" size={22} /></div>
@@ -5655,7 +5757,7 @@ function AdminReportesSection() {
                   : '—'}
               </p>
               <p className="kpi-label">Asistencia promedio</p>
-              <p className="kpi-detail">Indice de presencia</p>
+              <p className="kpi-detail">Índice de presencia</p>
             </article>
             <article className="kpi-card cyan">
               <div className="kpi-icon"><Icon name="book" size={22} /></div>
@@ -5669,22 +5771,22 @@ function AdminReportesSection() {
             </article>
           </section>
 
-          {/* ---- 2) Promedios academicos ---- */}
+          {/* ---- 2) Promedios académicos ---- */}
           <article className="card">
             <div className="section-header compact">
-              <h2>Promedios academicos</h2>
+              <h2>Promedios académicos</h2>
             </div>
             <div className="reportes-metrics-grid">
               <MetricBox label="Promedio acumulado" value={promedios.promedioAcumulado} decimals={2} unit="/5.0" />
-              <MetricBox label="Promedio matematicas basicas" value={promedios.promedioBasicas} decimals={2} unit="/5.0" />
-              <MetricBox label="Promedio ingenieria" value={promedios.promedioIngenieria} decimals={2} unit="/5.0" />
-              <MetricBox label="Promedio programacion" value={promedios.promedioProgramacion} decimals={2} unit="/5.0" />
-              <MetricBox label="Promedio mate/estadistica" value={promedios.promedioMatEstadistica} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio matemáticas básicas" value={promedios.promedioBasicas} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio ingeniería" value={promedios.promedioIngenieria} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio programación" value={promedios.promedioProgramacion} decimals={2} unit="/5.0" />
+              <MetricBox label="Promedio mate/estadística" value={promedios.promedioMatEstadistica} decimals={2} unit="/5.0" />
               <MetricBox label="Asistencia promedio" value={promedios.asistenciaPromedio} decimals={0} unit="%" />
-              <MetricBox label="Edad promedio" value={promedios.edadPromedio} decimals={0} unit=" anos" />
-              <MetricBox label="Avance creditos" value={promedios.avanceCreditosPromedio} decimals={0} unit="%" />
+              <MetricBox label="Edad promedio" value={promedios.edadPromedio} decimals={0} unit=" años" />
+              <MetricBox label="Avance créditos" value={promedios.avanceCreditosPromedio} decimals={0} unit="%" />
               <MetricBox label="Total reprobadas" value={promedios.totalReprobadas} decimals={0} />
-              <MetricBox label="Creditos aprobados (total)" value={promedios.totalCreditosAprobados} decimals={0} />
+              <MetricBox label="Créditos aprobados (total)" value={promedios.totalCreditosAprobados} decimals={0} />
               <MetricBox label="Asignaturas aprobadas (total)" value={promedios.totalAsignaturasAprobadas} decimals={0} />
               <MetricBox label="Simulacros realizados (total)" value={promedios.totalSimulacros} decimals={0} />
             </div>
@@ -5698,7 +5800,7 @@ function AdminReportesSection() {
             </div>
             {maxHistCount === 0 ? (
               <div className="data-table-empty">
-                <p>No hay predicciones para esta cohorte todavia.</p>
+                <p>No hay predicciones para esta cohorte todavía.</p>
               </div>
             ) : (
               <div className="histogram-bars">
@@ -5726,9 +5828,9 @@ function AdminReportesSection() {
 
           {/* ---- 4) Distribuciones demograficas (en grid) ---- */}
           <section className="reportes-distrib-grid">
-            <DistCard title="Nivel de ingles" rows={distIngles} />
-            <DistCard title="Genero" rows={distGenero} />
-            <DistCard title="Estrato socioeconomico" rows={distEstrato} />
+            <DistCard title="Nivel de inglés" rows={distIngles} />
+            <DistCard title="Género" rows={distGenero} />
+            <DistCard title="Estrato socioeconómico" rows={distEstrato} />
             <DistCard title="Trabaja actualmente" rows={distTrabaja.map((r) => ({
               ...r,
               key: r.key === 'true' ? 'Si' : r.key === 'false' ? 'No' : r.key,
@@ -5940,14 +6042,14 @@ function AdminStatsPanel() {
         <div className="cohort-metric-card">
           <span className="label">Cuentas desactivadas</span>
           <span className="value">{totalInactivos}</span>
-          <span className="hint">No pueden iniciar sesion</span>
+          <span className="hint">No pueden iniciar sesión</span>
         </div>
       </div>
 
       <div className="grid-2" style={{ marginTop: '1rem' }}>
         <article className="card">
           <div className="section-header compact">
-            <h2>Distribucion por rol</h2>
+            <h2>Distribución por rol</h2>
           </div>
           <table>
             <thead>
@@ -5968,7 +6070,7 @@ function AdminStatsPanel() {
         </article>
         <article className="card">
           <div className="section-header compact">
-            <h2>Distribucion por programa</h2>
+            <h2>Distribución por programa</h2>
           </div>
           <table>
             <thead>
@@ -6058,9 +6160,9 @@ function UserUpsertModal({ initialUser, onClose, onSaved }) {
 
         <section className="account-section">
           <p className="student-interpretation" style={{ margin: 0 }}>
-            La contrasena se asigna automaticamente como el numero de documento. Si
-            la cuenta ya existe, se actualizara nombre, correo, rol y programa, y se
-            reiniciara la contrasena.
+            La contraseña se asigna automáticamente como el número de documento. Si
+            la cuenta ya existe, se actualizará nombre, correo, rol y programa, y se
+            reiniciará la contraseña.
           </p>
           <form className="profile-form" onSubmit={handleSubmit}>
             <label className="auth-label" htmlFor="upsert-doc">
@@ -6207,7 +6309,7 @@ function AdminUsersPanel({ currentUser }) {
         ? await apiDeactivateAdminUser(user.id)
         : await apiActivateAdminUser(user.id)
       if (!res.ok) {
-        toast.error(res.message || 'Operacion no completada.')
+        toast.error(res.message || 'Operación no completada.')
         return
       }
       toast.success(
@@ -6225,7 +6327,7 @@ function AdminUsersPanel({ currentUser }) {
     <section style={{ display: 'grid', gap: '1rem' }}>
       <div className="cohort-toolbar">
         <div>
-          <p className="banner-kicker">Gestion de usuarios</p>
+          <p className="banner-kicker">Gestión de usuarios</p>
           <h2>Asignar roles y administrar cuentas</h2>
         </div>
         <div className="filter-group" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -6401,37 +6503,37 @@ function AdminUsersPanel({ currentUser }) {
 // tone es una de: success | danger | info | warning | muted | neutral
 const AUDIT_ACTIONS = {
   LOGIN_SUCCESS: {
-    label: 'Inicio de sesion exitoso',
+    label: 'Inicio de sesión exitoso',
     icon: 'check',
     tone: 'success',
     description: 'El usuario ingreso correctamente al sistema.',
   },
   LOGIN_FAIL: {
-    label: 'Inicio de sesion fallido',
+    label: 'Inicio de sesión fallido',
     icon: 'x',
     tone: 'danger',
-    description: 'Intento de inicio de sesion con credenciales incorrectas.',
+    description: 'Intento de inicio de sesión con credenciales incorrectas.',
   },
   PASSWORD_CHANGE: {
-    label: 'Cambio de contrasena',
+    label: 'Cambio de contraseña',
     icon: 'settings',
     tone: 'info',
-    description: 'El usuario modifico su contrasena desde su cuenta.',
+    description: 'El usuario modifico su contraseña desde su cuenta.',
   },
   RECOVER_REQUEST: {
-    label: 'Solicitud de recuperacion',
+    label: 'Solicitud de recuperación',
     icon: 'warning',
     tone: 'warning',
-    description: 'Se solicito recuperacion de contrasena para una cuenta.',
+    description: 'Se solicitó recuperación de contraseña para una cuenta.',
   },
   USER_UPSERT: {
-    label: 'Creacion de usuario',
+    label: 'Creación de usuario',
     icon: 'userPlus',
     tone: 'success',
-    description: 'Se creo o reasigno un usuario del sistema.',
+    description: 'Se creó o reasignó un usuario del sistema.',
   },
   USER_EDIT: {
-    label: 'Edicion de usuario',
+    label: 'Edición de usuario',
     icon: 'settings',
     tone: 'info',
     description: 'Se modificaron datos de un usuario existente.',
@@ -6440,7 +6542,7 @@ const AUDIT_ACTIONS = {
     label: 'Usuario desactivado',
     icon: 'x',
     tone: 'danger',
-    description: 'Se desactivo una cuenta. No podra iniciar sesion hasta reactivarla.',
+    description: 'Se desactivó una cuenta. No podrá iniciar sesión hasta reactivarla.',
   },
   USER_ACTIVATE: {
     label: 'Usuario reactivado',
@@ -6449,16 +6551,16 @@ const AUDIT_ACTIONS = {
     description: 'Se reactivo una cuenta previamente desactivada.',
   },
   update_user: {
-    label: 'Actualizacion de usuario',
+    label: 'Actualización de usuario',
     icon: 'settings',
     tone: 'info',
     description: 'Se actualizaron datos de un usuario.',
   },
   EXPORT_METRICS_CSV: {
-    label: 'Exportar metricas CSV',
+    label: 'Exportar métricas CSV',
     icon: 'download',
     tone: 'muted',
-    description: 'Se descargo el CSV de metricas del modelo.',
+    description: 'Se descargó el CSV de métricas del modelo.',
   },
 }
 
@@ -6468,7 +6570,7 @@ function getAuditActionMeta(code) {
       label: code,
       icon: 'crown',
       tone: 'neutral',
-      description: 'Accion registrada en el sistema.',
+      description: 'Acción registrada en el sistema.',
     }
   )
 }
@@ -6530,7 +6632,7 @@ function AuditDetailsModal({ entry, onClose }) {
 
         <section className="audit-details-meta">
           <div className="audit-details-meta-item">
-            <span className="audit-details-meta-label">Codigo</span>
+            <span className="audit-details-meta-label">Código</span>
             <span className="audit-details-meta-value audit-code">{entry.accion}</span>
           </div>
           <div className="audit-details-meta-item">
@@ -6552,10 +6654,10 @@ function AuditDetailsModal({ entry, onClose }) {
         </section>
 
         <section className="audit-details-body">
-          <h4>Informacion capturada</h4>
+          <h4>Información capturada</h4>
           {detalleEntries.length === 0 ? (
             <p className="audit-details-empty">
-              Esta accion no registro informacion adicional.
+              Esta acción no registro información adicional.
             </p>
           ) : (
             <dl className="audit-details-list">
@@ -6613,7 +6715,7 @@ function AdminAuditPanel() {
       .then((res) => {
         if (cancelled) return
         if (!res.ok) {
-          setError(res.message || 'No se pudo cargar la auditoria.')
+          setError(res.message || 'No se pudo cargar la auditoría.')
           setStatus('error')
           return
         }
@@ -6642,12 +6744,12 @@ function AdminAuditPanel() {
         createdAtTo: dateTo ? `${dateTo} 23:59:59` : undefined,
       })
       if (!res.ok) {
-        alert(res.message || 'No se pudo exportar la auditoria.')
+        alert(res.message || 'No se pudo exportar la auditoría.')
         return
       }
       // Construir CSV en cliente. Escape RFC 4180. Exporta labels amigables
       // en vez de los codigos crudos, para que el CSV sea legible.
-      const header = ['Fecha', 'Administrador', 'Accion', 'Documento objetivo', 'Detalles']
+      const header = ['Fecha', 'Administrador', 'Acción', 'Documento objetivo', 'Detalles']
       const escape = (v) => {
         if (v === null || v === undefined) return ''
         const s = String(v)
@@ -6688,7 +6790,7 @@ function AdminAuditPanel() {
 
       <div className="cohort-toolbar">
         <div>
-          <p className="banner-kicker">Auditoria</p>
+          <p className="banner-kicker">Auditoría</p>
           <h2>Historial de acciones administrativas</h2>
         </div>
         <div className="filter-group" style={{ display: 'flex', gap: '0.5rem' }}>
@@ -6789,7 +6891,7 @@ function AdminAuditPanel() {
               { key: 'adminEmail', label: 'Administrador', render: (e) => e.adminEmail || `id ${e.adminId}` },
               {
                 key: 'accion',
-                label: 'Accion',
+                label: 'Acción',
                 render: (e) => {
                   const meta = getAuditActionMeta(e.accion)
                   return (
@@ -6866,9 +6968,9 @@ const BACKEND_ORIGIN = (import.meta.env.VITE_API_BASE || 'http://localhost:4000/
 const ANALYSIS_IMAGES = [
   { src: `${BACKEND_ORIGIN}/assets/analysis/v2_predicho_vs_real.png`, alt: 'Puntaje predicho contra real', title: 'Predicho vs real (0-300)' },
   { src: `${BACKEND_ORIGIN}/assets/analysis/v2_residuos.png`, alt: 'Residuales del modelo', title: 'Residuales (real - predicho)' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_errores_por_area.png`, alt: 'Error por area del examen', title: 'MAE por area del examen' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_errores_por_area.png`, alt: 'Error por área del examen', title: 'MAE por área del examen' },
   { src: `${BACKEND_ORIGIN}/assets/analysis/v2_importance_variables.png`, alt: 'Importancia de las variables', title: 'Importancia de variables (permutacion)' },
-  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_distribucion_bandas.png`, alt: 'Distribucion por banda', title: 'Bandas: observado vs predicho' },
+  { src: `${BACKEND_ORIGIN}/assets/analysis/v2_distribucion_bandas.png`, alt: 'Distribución por banda', title: 'Bandas: observado vs predicho' },
   { src: `${BACKEND_ORIGIN}/assets/analysis/v2_error_por_edad.png`, alt: 'Error por rango de edad', title: 'MAE por rango de edad' },
 ]
 
@@ -6900,7 +7002,7 @@ function HealthPill({ health, status }) {
   if (status === 'loading') {
     return <span className="muted-text small">Verificando servicios...</span>
   }
-  if (!health) return <span className="muted-text small">Sin conexion</span>
+  if (!health) return <span className="muted-text small">Sin conexión</span>
   return (
     <div className="health-pill" aria-label="Estado de servicios">
       <span className={`health-dot ${dot(health.express)}`}><span className="health-dot-mark" /> Express</span>
@@ -6938,7 +7040,7 @@ function AdminAnalysisPanel() {
       .then((res) => {
         if (cancelled) return
         if (res.ok) { setMetrics(res.metrics); setMetricsStatus('ready') }
-        else { setMetricsError(res.message || 'No se pudo cargar las metricas.'); setMetricsStatus('error') }
+        else { setMetricsError(res.message || 'No se pudo cargar las métricas.'); setMetricsStatus('error') }
       })
       .catch((err) => {
         if (cancelled) return
@@ -6987,7 +7089,7 @@ function AdminAnalysisPanel() {
           setPrediction(res)
           setPredictStatus('ready')
         } else {
-          setPredictError(res.message || 'No se pudo obtener la prediccion.')
+          setPredictError(res.message || 'No se pudo obtener la predicción.')
           setPredictStatus('error')
         }
       })
@@ -7030,21 +7132,21 @@ function AdminAnalysisPanel() {
       <section className="card welcome-banner analysis-hero">
         <div>
           <p className="banner-kicker">Modelo predictivo</p>
-          <h2>Analisis del modelo entrenado con datos reales</h2>
+          <h2>Análisis del modelo entrenado con datos reales</h2>
           <p className="banner-text">
             El modelo <code>{metrics?.model_version || 'saberpro-v2'}</code> es una{' '}
-            <strong>regresion</strong> que predice el <strong>puntaje real del
+            <strong>regresión</strong> que predice el <strong>puntaje real del
             Saber Pro</strong> (escala 0-300). El objetivo es la{' '}
-            <strong>suma de las tres areas</strong> del examen (matematicas,
+            <strong>suma de las tres áreas</strong> del examen (matematicas,
             lectura critica e ingles, 0-100 cada una), no una banda del promedio
             academico.
             {muestra ? (
               <>
-                {' '}Se entreno con <strong>{muestra.entrenadas}</strong> de las{' '}
+                {' '}Se entrenó con <strong>{muestra.entrenadas}</strong> de las{' '}
                 {muestra.filas_dataset} filas del dataset{' '}
                 <code>dataset_saber_pro_real</code>: {muestra.con_areas_completas}{' '}
-                tienen las tres areas del examen y {muestra.con_historial} ademas
-                historial academico.
+                tienen las tres áreas del examen y {muestra.con_historial} Además
+                historial académico.
               </>
             ) : null}
           </p>
@@ -7068,7 +7170,7 @@ function AdminAnalysisPanel() {
         <article className="kpi-card violet">
           <div className="kpi-icon"><Icon name="chart" size={22} /></div>
           <p className="kpi-value">{g ? fmt2(g.baseline_mae) : '-'}</p>
-          <p className="kpi-label">MAE linea base</p>
+          <p className="kpi-label">MAE línea base</p>
           <p className="kpi-detail">Predecir siempre la media</p>
         </article>
         <article className="kpi-card lime">
@@ -7081,19 +7183,19 @@ function AdminAnalysisPanel() {
           <div className="kpi-icon"><Icon name="file" size={22} /></div>
           <p className="kpi-value">{muestra ? `${muestra.entrenadas} / ${muestra.filas_dataset}` : '-'}</p>
           <p className="kpi-label">Filas de entrenamiento</p>
-          <p className="kpi-detail">Con las 3 areas y con historial</p>
+          <p className="kpi-detail">Con las 3 áreas y con historial</p>
         </article>
       </section>
 
       {metricsStatus === 'error' ? (
         <div className="card error-banner">
-          <strong>No se pudieron cargar las metricas:</strong> {metricsError}
+          <strong>No se pudieron cargar las métricas:</strong> {metricsError}
         </div>
       ) : null}
 
       <section className="card">
         <div className="section-header">
-          <h3>Comparativa de modelos de regresion (puntaje global)</h3>
+          <h3>Comparativa de modelos de regresión (puntaje global)</h3>
           <button
             className="auth-button-secondary"
             type="button"
@@ -7106,8 +7208,8 @@ function AdminAnalysisPanel() {
         <p className="muted-text">
           Modelos entrenados sobre el mismo objetivo (puntaje global de 0 a 300)
           y evaluados con <code>RepeatedKFold</code> (5 cortes x 3 repeticiones).
-          En una regresion gana el de menor <strong>MAE</strong>;{' '}
-          <code>DummyMedia</code> es la linea base: predecir siempre el promedio
+          En una regresión gana el de menor <strong>MAE</strong>;{' '}
+          <code>DummyMedia</code> es la línea base: predecir siempre el promedio
           de la muestra.
         </p>
         {metricsStatus === 'ready' && metrics?.comparativa?.length ? (
@@ -7142,13 +7244,13 @@ function AdminAnalysisPanel() {
 
       <section className="card">
         <div className="section-header">
-          <h3>Desempeno por area del examen</h3>
-          <span className="live-chip">0-100 por area</span>
+          <h3>Desempeño por área del examen</h3>
+          <span className="live-chip">0-100 por área</span>
         </div>
         <p className="muted-text">
-          Cada area del Saber Pro se predice con su propio regresor y el puntaje
-          global es la <strong>suma de las areas predichas</strong>. Asi lo que
-          ve el estudiante siempre cuadra con las areas mostradas.
+          Cada área del Saber Pro se predice con su propio regresor y el puntaje
+          global es la <strong>suma de las áreas predichas</strong>. Así lo que
+          ve el estudiante siempre cuadra con las áreas mostradas.
         </p>
         {metricsStatus === 'ready' && metrics?.areas?.length ? (
           <table className="ab-compare-table">
@@ -7159,7 +7261,7 @@ function AdminAnalysisPanel() {
                 <th>MAE</th>
                 <th>RMSE</th>
                 <th>R2</th>
-                <th>MAE linea base</th>
+                <th>MAE línea base</th>
               </tr>
             </thead>
             <tbody>
@@ -7174,7 +7276,7 @@ function AdminAnalysisPanel() {
                 </tr>
               ))}
               <tr>
-                <td className="compare-label">Global (suma de areas)</td>
+                <td className="compare-label">Global (suma de áreas)</td>
                 <td>3 regresores</td>
                 <td className="table-code">{fmt2(g?.mae)}</td>
                 <td className="table-code">{fmt2(g?.rmse)}</td>
@@ -7189,16 +7291,16 @@ function AdminAnalysisPanel() {
       {bandas ? (
         <section className="card">
           <div className="section-header">
-            <h3>Bandas de desempeno</h3>
+            <h3>Bandas de desempeño</h3>
             <span className="live-chip">Cortes sobre 300</span>
           </div>
           <p className="muted-text">
             El puntaje se resume en tres bandas para la lectura institucional.
-            Los cortes son los percentiles 30 y 70 de la cohorte que presento el
+            Los cortes son los percentiles 30 y 70 de la cohorte que presentó el
             examen: por debajo de <strong>{bandas.bajo_max}</strong> el
             desempeño es <strong>bajo</strong>, entre {bandas.bajo_max} y{' '}
             <strong>{bandas.medio_max}</strong> es <strong>medio</strong>, y{' '}
-            {bandas.medio_max} o mas es <strong>alto</strong>.{' '}
+            {bandas.medio_max} o más es <strong>alto</strong>.{' '}
             {bandas.criterio ? <em>{bandas.criterio}.</em> : null}
           </p>
         </section>
@@ -7223,14 +7325,14 @@ function AdminAnalysisPanel() {
 
       <section className="card">
         <div className="section-header">
-          <h3>Distribucion por banda</h3>
+          <h3>Distribución por banda</h3>
           <span className="live-chip">{datasetStats?.total || '—'} registros</span>
         </div>
         <p className="muted-text">
-          La distribucion <strong>observada</strong> es la del puntaje real en la
+          La distribución <strong>observada</strong> es la del puntaje real en la
           muestra de entrenamiento ({datasetStats?.rows_used ?? '—'} estudiantes
           que presentaron el examen). La <strong>predicha</strong> es la que el
-          modelo asigno a cada estudiante evaluado de la cohorte. Las dos usan
+          modelo asignó a cada estudiante evaluado de la cohorte. Las dos usan
           los mismos cortes de banda, de modo que se comparan directamente.
         </p>
         {datasetStatus === 'loading' ? (
@@ -7240,7 +7342,7 @@ function AdminAnalysisPanel() {
             <div className="skeleton skeleton-stacked" />
           </div>
         ) : null}
-        {datasetStatus === 'error' ? <p className="muted-text">No se pudo cargar la distribucion.</p> : null}
+        {datasetStatus === 'error' ? <p className="muted-text">No se pudo cargar la distribución.</p> : null}
         {datasetStatus === 'ready' && datasetStats ? (
           (() => {
             const observada = datasetStats.target_distribution || {}
@@ -7302,7 +7404,7 @@ function AdminAnalysisPanel() {
       <section className="card">
         <div className="section-header">
           <h3>Calidad del dataset</h3>
-          <span className="live-chip">Nulos y categoricas</span>
+          <span className="live-chip">Nulos y categóricas</span>
         </div>
         <p className="muted-text">
           Conteo de valores nulos por columna usada por el modelo, mas la
@@ -7372,14 +7474,14 @@ function AdminAnalysisPanel() {
 
       <section className="card">
         <div className="section-header">
-          <h3>Graficos del analisis</h3>
+          <h3>Gráficos del análisis</h3>
           <span className="live-chip">PNG · {ANALYSIS_IMAGES.length} figuras</span>
         </div>
         <p className="muted-text">
           Generados por <code>ml-training/analyze_v2_results.py</code> a partir
           del modelo serializado en{' '}
           <code>ml-training/trained_models/saberpro_model_v2.pkl</code> y de la
-          misma muestra con la que se entreno.
+          misma muestra con la que se entrenó.
         </p>
         <div className="analysis-gallery">
           {ANALYSIS_IMAGES.map((img) => (
@@ -7399,8 +7501,8 @@ function AdminAnalysisPanel() {
           <span className="live-chip">14 features</span>
         </div>
         <p className="muted-text">
-          Envia las 14 variables que usa el modelo v2 (12 numericas y 2
-          categoricas). La peticion pasa por Express (puerto 4000) y luego a
+          Envia las 14 variables que usa el modelo v2 (12 numéricas y 2
+          categóricas). La peticion pasa por Express (puerto 4000) y luego a
           FastAPI (puerto 8000), que carga el .pkl y devuelve el puntaje
           estimado con su margen de error y la probabilidad de cada banda.
         </p>
@@ -7413,25 +7515,25 @@ function AdminAnalysisPanel() {
                 onChange={(e) => updateField('promedio_acumulado', Number(e.target.value))} />
             </label>
             <label className="form-field">
-              <span>Promedio basicas (0-5)</span>
+              <span>Promedio básicas (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_materias_basicas}
                 onChange={(e) => updateField('promedio_materias_basicas', Number(e.target.value))} />
             </label>
             <label className="form-field">
-              <span>Promedio ingenieria (0-5)</span>
+              <span>Promedio ingeniería (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_ingenieria}
                 onChange={(e) => updateField('promedio_ingenieria', Number(e.target.value))} />
             </label>
             <label className="form-field">
-              <span>Promedio programacion (0-5)</span>
+              <span>Promedio programación (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_programacion}
                 onChange={(e) => updateField('promedio_programacion', Number(e.target.value))} />
             </label>
             <label className="form-field">
-              <span>Promedio matematica/estadistica (0-5)</span>
+              <span>Promedio matemática/estadística (0-5)</span>
               <input type="number" step="0.01" min="0" max="5" required
                 value={form.promedio_matematica_estadistica}
                 onChange={(e) => updateField('promedio_matematica_estadistica', Number(e.target.value))} />
@@ -7461,7 +7563,7 @@ function AdminAnalysisPanel() {
                 onChange={(e) => updateField('estrato', Number(e.target.value))} />
             </label>
             <label className="form-field">
-              <span>Creditos aprobados (0-300)</span>
+              <span>Créditos aprobados (0-300)</span>
               <input type="number" min="0" max="300" required
                 value={form.creditos_aprobados}
                 onChange={(e) => updateField('creditos_aprobados', Number(e.target.value))} />
@@ -7479,7 +7581,7 @@ function AdminAnalysisPanel() {
                 onChange={(e) => updateField('edad', Number(e.target.value))} />
             </label>
             <label>
-              <span>Genero</span>
+              <span>Género</span>
               <select value={form.genero}
                 onChange={(e) => updateField('genero', e.target.value)}>
                 <option value="M">M</option>
@@ -7487,7 +7589,7 @@ function AdminAnalysisPanel() {
               </select>
             </label>
             <label>
-              <span>Nivel de ingles</span>
+              <span>Nivel de inglés</span>
               <select value={form.promedio_ingles_nivel}
                 onChange={(e) => updateField('promedio_ingles_nivel', e.target.value)}>
                 <option value="A1">A1</option>
@@ -7548,7 +7650,7 @@ function AdminAnalysisPanel() {
                 <Icon name={iconName} size={22} />
               </div>
               <div className="prediction-body">
-                <span className="prediction-label">Banda de desempeno</span>
+                <span className="prediction-label">Banda de desempeño</span>
                 <span className="prediction-class">{prediction.resultado}</span>
               </div>
               <span
@@ -7657,7 +7759,7 @@ function AdminView({ user, onLogout, onUserUpdated }) {
                 <p className="banner-kicker">Vista del administrador</p>
                 <h1>Centro de control institucional</h1>
                 <p className="banner-text">
-                  Desde aqui puedes asignar roles, ver todos los usuarios del sistema,
+                  Desde aquí puedes asignar roles, ver todos los usuarios del sistema,
                   activar o desactivar cuentas, y consultar el historial de cambios
                   realizados por administradores anteriores.
                 </p>
@@ -7725,8 +7827,8 @@ function HomePage({ user, onLogout, onUserUpdated }) {
     return <AdminView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
   }
 
-  if (user.role === 'rector') {
-    return <RectorView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
+  if (user.role === 'coordinador') {
+    return <CoordinadorView user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
   }
 
   if (user.role === 'decano') {
@@ -7774,7 +7876,7 @@ function App() {
     const result = await apiLogin({ identifier, password })
 
     if (!result.ok) {
-      return { ok: false, message: result.message || 'No se pudo iniciar sesion.' }
+      return { ok: false, message: result.message || 'No se pudo iniciar sesión.' }
     }
 
     const normalized = normalizeUser(result.user)

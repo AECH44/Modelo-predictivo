@@ -45,7 +45,7 @@ describe('parseCsvRow', () => {
     expect(p.edad).toBe(25)
     expect(p.genero).toBe('M')
     expect(p.trabaja).toBe(false)
-    expect(p.nivel_ingles).toBe('C1')
+    expect(p.nivel_ingles).toBe('A2')
     expect(p.ciudad).toBe('Bogota')
   })
 
@@ -61,8 +61,13 @@ describe('parseCsvRow', () => {
   })
 
   it('convierte INGLES escala 1-7 a nivel MCER', () => {
+    // Escala del export -> nivel MCER:
+    // 1-2 -> A1, 3-5 -> A2, 6-7 -> B1, 8 -> C1, 9 o mas -> C2.
     const cases = [
-      [1, 'A1'], [2, 'A2'], [3, 'B1'], [4, 'B2'], [5, 'C1'], [6, 'C2'], [7, 'C2'],
+      [1, 'A1'], [2, 'A1'],
+      [3, 'A2'], [4, 'A2'], [5, 'A2'],
+      [6, 'B1'], [7, 'B1'],
+      [8, 'C1'], [9, 'C2'], [11, 'C2'],
     ]
     for (const [escala, nivel] of cases) {
       expect(parseCsvRow({ PROMEDIO_INGLES: String(escala) }).nivel_ingles).toBe(nivel)

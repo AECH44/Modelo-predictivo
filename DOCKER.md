@@ -25,11 +25,10 @@ docker-compose --profile init run --rm init-data
 docker-compose --profile train run --rm ml-training
 ```
 
-Login con cualquiera de las 4 cuentas admin:
-- `rectoria@unac.edu.co` / `91497570`
+Login con cualquiera de las cuentas admin:
+- `coordinacion.ingenieria@unac.edu.co` (contraseña en `backend/src/scripts/seed-admins.js`)
 - `facultad.ingenieria@unac.edu.co` / `91475722`
-- `javierf.cordobap@unac.edu.co` / `7702661`
-- `jhanc.mesae@unac.edu.co` / `1001417605`
+- `admin.saberpro@unac.edu.co` (contraseña en `backend/src/scripts/seed-admins.js`)
 
 ## URLs
 

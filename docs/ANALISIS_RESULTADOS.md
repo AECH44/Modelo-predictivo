@@ -341,7 +341,7 @@ Frontend React (Vite, puerto 5173)
         ▼
 Backend Express (Node, puerto 4000)
   - Autenticación (bcrypt + JWT)
-  - Autorización por rol (rector / decano / profesor / administrador)
+  - Autorización por rol (coordinador / decano / profesor / administrador)
   - Endpoints admin: /admin/stats, /admin/users, /analysis/*
   - Predictor como wrapper del servicio Python (con fallback heurístico)
         │
@@ -478,14 +478,15 @@ python analyze_results.py     # Genera 6 PNG + reporte.md
 
 ### 10.6 Credenciales de admin
 
-Password = número de documento (política institucional):
+Password = número de documento (política institucional), salvo el administrador
+y el coordinador, que tienen contraseña propia en `seed-admins.js`:
 
 | Rol | Email | Password |
 |---|---|---|
-| rector | rectoria@unac.edu.co | 91497570 |
+| coordinador | coordinacion.ingenieria@unac.edu.co | ver `seed-admins.js` |
 | decano | facultad.ingenieria@unac.edu.co | 91475722 |
+| administrador | admin.saberpro@unac.edu.co | ver `seed-admins.js` |
 | profesor | javierf.cordobap@unac.edu.co | 7702661 |
-| administrador | jhanc.mesae@unac.edu.co | 1001417605 |
 
 ---
 

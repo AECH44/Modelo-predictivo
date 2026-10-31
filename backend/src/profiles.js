@@ -178,10 +178,10 @@ export async function listPredictions(userId, limit = 10) {
 }
 
 // ============================================================
-// COHORTE — para profesor/decano/rector
+// COHORTE — para profesor/decano/coordinador
 // ============================================================
 
-export async function listCohort({ program }) {
+export async function listCohort({ program, semestre }) {
   // LATERAL JOIN para traer la prediccion mas reciente sin duplicar filas.
   // Incluye todos los campos del perfil academico (los 18) para alimentar
   // reportes academicos y graficos demograficos (no solo los basicos).
@@ -190,6 +190,11 @@ export async function listCohort({ program }) {
   if (program && program !== 'all') {
     params.push(program)
     where += ` AND u.program = $${params.length}`
+  }
+  // Filtro por semestre (1-12), tomado del perfil del estudiante.
+  if (semestre) {
+    params.push(semestre)
+    where += ` AND sp.semestre = $${params.length}`
   }
   const { rows } = await pool.query(
     `SELECT u.id, u.documento, u.username, u.email, u.program, u.is_active,
@@ -477,12 +482,40 @@ export async function getReportSummary({ program }) {
   }
 }
 
-export async function cohortMetrics({ program }) {
+// Semestres presentes en la cohorte del alcance (sin aplicar el filtro de
+// semestre), para que el selector muestre siempre todas las opciones.
+export async function listCohortSemesters({ program }) {
   const params = []
   let where = `u.role = 'estudiante'`
   if (program && program !== 'all') {
     params.push(program)
     where += ` AND u.program = $${params.length}`
+  }
+  const { rows } = await pool.query(
+    `SELECT DISTINCT sp.semestre
+       FROM usuarios u
+       JOIN student_profiles sp ON sp.user_id = u.id
+      WHERE ${where} AND sp.semestre IS NOT NULL
+      ORDER BY sp.semestre`,
+    params,
+  )
+  return rows
+    .map((r) => Number(r.semestre))
+    .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12)
+}
+
+export async function cohortMetrics({ program, semestre }) {
+  const params = []
+  let where = `u.role = 'estudiante'`
+  if (program && program !== 'all') {
+    params.push(program)
+    where += ` AND u.program = $${params.length}`
+  }
+  // Mismo filtro por semestre que en listCohort: asi las tarjetas de
+  // indicadores y la tabla describen el mismo conjunto de estudiantes.
+  if (semestre) {
+    params.push(semestre)
+    where += ` AND sp.semestre = $${params.length}`
   }
   // Un solo recorrido agrega conteos para cobertura, distribucion de riesgo
   // y promedio de puntaje estimado. `p.user_id` aparece en el LATERAL para

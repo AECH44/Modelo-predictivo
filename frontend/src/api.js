@@ -123,11 +123,14 @@ export async function apiGetStudentPredictions() {
 }
 
 // =====================================================================
-// Cohorte (profesor / decano / rector)
+// Cohorte (profesor / decano / coordinador)
 // =====================================================================
 
-export async function apiGetCohort(program) {
-  const qs = program ? `?program=${encodeURIComponent(program)}` : ''
+export async function apiGetCohort(program, semestre) {
+  const params = new URLSearchParams()
+  if (program) params.set('program', program)
+  if (semestre) params.set('semestre', String(semestre))
+  const qs = params.toString() ? `?${params.toString()}` : ''
   return request(`/cohort/students${qs}`, { auth: true })
 }
 

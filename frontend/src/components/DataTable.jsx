@@ -10,6 +10,12 @@ import { Icon } from './Icon.jsx'
  *   columns: [{ key, label, render?: (row) => ReactNode, className?: string }]
  *   searchFields: nombres de campos en los que buscar (case-insensitive)
  *   searchPlaceholder: placeholder del input
+ *   numericSearchField: campo numerico que se busca de forma EXACTA cuando la
+ *     consulta es un numero corto (1-2 digitos). Sirve para que escribir
+ *     "5" traiga a los estudiantes del semestre 5 y no a todos los que
+ *     tienen un 5 en el documento.
+ *   extraFilter: nodo React opcional que se renderiza junto al buscador
+ *     (por ejemplo, el selector de semestre).
  *   defaultPageSize: tamano inicial de pagina (default 25)
  *   pageSizeOptions: opciones del selector (default [10, 25, 50, 100])
  *   emptyMessage: mensaje cuando no hay resultados
@@ -22,6 +28,8 @@ export function DataTable({
   columns = [],
   searchFields = [],
   searchPlaceholder = 'Buscar...',
+  numericSearchField = null,
+  extraFilter = null,
   defaultPageSize = 25,
   pageSizeOptions = [10, 25, 50, 100],
   emptyMessage = 'Sin resultados',
@@ -36,11 +44,18 @@ export function DataTable({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q || !searchFields.length) return rows
+    // Consulta numerica corta (1-2 digitos): filtro EXACTO por el campo
+    // numerico (p.ej. el semestre). Sin este caso, escribir "5" tambien
+    // traeria a los estudiantes cuyo documento contiene un 5.
+    if (numericSearchField && /^\d{1,2}$/.test(q)) {
+      const n = Number(q)
+      return rows.filter((r) => Number(r[numericSearchField]) === n)
+    }
     return rows.filter((r) =>
       searchFields.some((f) => String(r[f] ?? '').toLowerCase().includes(q)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, search, searchFields.join('|')])
+  }, [rows, search, searchFields.join('|'), numericSearchField])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(Math.max(page, 1), totalPages)
@@ -64,16 +79,19 @@ export function DataTable({
   return (
     <div className="data-table-wrap">
       <div className="data-table-toolbar">
-        <div className="data-table-search">
-          <Icon name="search" size={16} />
-          <input
-            type="search"
-            className="auth-input data-table-search-input"
-            placeholder={searchPlaceholder}
-            value={search}
-            onChange={handleSearch}
-            aria-label="Buscar"
-          />
+        <div className="data-table-toolbar-left">
+          <div className="data-table-search">
+            <Icon name="search" size={16} />
+            <input
+              type="search"
+              className="auth-input data-table-search-input"
+              placeholder={searchPlaceholder}
+              value={search}
+              onChange={handleSearch}
+              aria-label="Buscar"
+            />
+          </div>
+          {extraFilter}
         </div>
         <label className="data-table-page-size">
           <span>Mostrar</span>

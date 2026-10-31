@@ -13,7 +13,7 @@ El sistema entrena un modelo de Machine Learning (Gradient Boosting Classifier)
 con datos reales anonimizados de la universidad y expone una API REST + panel
 administrativo para:
 
-- **Admins** (rector, decano, profesor, administrador): visualizar métricas del
+- **Admins** (coordinador, decano, profesor, administrador): visualizar métricas del
   modelo, probar predicciones con el `.pkl` real, y gestionar usuarios.
 - **Estudiantes** (futuro): completar perfil y ver predicción de su rendimiento.
 
@@ -164,14 +164,16 @@ cd ..
 cd backend && npm run seed-admins && cd ..
 ```
 
-Crea 4 cuentas admin con política `password = número de documento`:
+Crea las cuentas admin. La política es `password = número de documento`,
+excepto el administrador y el coordinador, que tienen contraseña propia
+(definida en `backend/src/scripts/seed-admins.js`):
 
 | Rol           | Email                              | Password       |
 | ------------- | ---------------------------------- | -------------- |
-| rector        | rectoria@unac.edu.co               | 91497570       |
-| decano        | facultad.ingenieria@unac.edu.co    | 91475722       |
-| profesor      | javierf.cordobap@unac.edu.co       | 7702661        |
-| administrador | jhanc.mesae@unac.edu.co            | 1001417605     |
+| coordinador   | coordinacion.ingenieria@unac.edu.co | ver `seed-admins.js` |
+| decano        | facultad.ingenieria@unac.edu.co    | 91475722 (documento) |
+| administrador | admin.saberpro@unac.edu.co         | ver `seed-admins.js` |
+| profesor      | javierf.cordobap@unac.edu.co       | 7702661 (documento)  |
 
 ### 4b. Importar estudiantes desde el CSV identificado
 

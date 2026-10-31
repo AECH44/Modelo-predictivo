@@ -792,35 +792,35 @@ class PredictionService:
         # (segunda mas importante entre los promedios).
         recommendations = {
             'Bajo': (
-                f"Tu prediccion indica un rendimiento bajo en Saber Pro. "
-                f"Recomendaciones especificas:\n\n"
-                f"1. Refuerza materias basicas: Tu promedio en basicas ({student_data.promedio_materias_basicas:.2f}) "
+                f"Tu predicción indica un rendimiento bajo en Saber Pro. "
+                f"Recomendaciones específicas:\n\n"
+                f"1. Refuerza materias básicas: Tu promedio en básicas ({student_data.promedio_materias_basicas:.2f}) "
                 f"indica necesidad de mejora.\n"
                 f"2. Aumenta horas de estudio: Considera dedicar al menos "
                 f"{max(15, int(student_data.porcentaje_avance * 0.3))} horas semanales adicionales.\n"
-                f"3. Busca tutorias: Utiliza los servicios de apoyo academico de tu universidad.\n"
-                f"4. Forma grupos de estudio: El aprendizaje colaborativo puede mejorar tu desempeno.\n"
+                f"3. Busca tutorías: Utiliza los servicios de apoyo académico de tu universidad.\n"
+                f"4. Forma grupos de estudio: El aprendizaje colaborativo puede mejorar tu desempeño.\n"
                 f"5. Consulta con tu asesor: Agenda una cita para revisar tu plan de estudios."
             ),
             'Medio': (
-                f"Tu prediccion indica un rendimiento medio en Saber Pro. "
+                f"Tu predicción indica un rendimiento medio en Saber Pro. "
                 f"Para mejorar tu resultado:\n\n"
-                f"1. Consolidar conocimientos: Tu promedio de ingenieria ({student_data.promedio_ingenieria:.2f}) "
+                f"1. Consolidar conocimientos: Tu promedio de ingeniería ({student_data.promedio_ingenieria:.2f}) "
                 f"es correcto, pero puede mejorar.\n"
-                f"2. Enfocate en ingenieria: Es la variable con mayor peso en el modelo.\n"
+                f"2. Enfócate en ingeniería: Es la variable con mayor peso en el modelo.\n"
                 f"3. Practica con simulacros: Realiza al menos 2 simulacros semanales.\n"
-                f"4. Identifica areas debiles: Revisa temas con menores promedios.\n"
-                f"5. Manten la consistencia: La constancia es fundamental para pasar de medio a alto."
+                f"4. Identifica áreas débiles: Revisa temas con menores promedios.\n"
+                f"5. Mantén la consistencia: La constancia es fundamental para pasar de medio a alto."
             ),
             'Alto': (
-                f"Excelente! Tu prediccion indica un alto rendimiento esperado en Saber Pro. "
+                f"¡Excelente! Tu predicción indica un alto rendimiento esperado en Saber Pro. "
                 f"Para mantener este nivel:\n\n"
-                f"1. Manten tu ritmo: Tu promedio de ingenieria ({student_data.promedio_ingenieria:.2f}) "
-                f"es excelente, sigue asi.\n"
-                f"2. Practica bajo presion: Realiza simulacros en condiciones de examen.\n"
-                f"3. Repasa temas complejos: Enfocate en areas que suelen ser desafiantes.\n"
+                f"1. Mantén tu ritmo: Tu promedio de ingeniería ({student_data.promedio_ingenieria:.2f}) "
+                f"es excelente, sigue así.\n"
+                f"2. Practica bajo presión: Realiza simulacros en condiciones de examen.\n"
+                f"3. Repasa temas complejos: Enfócate en áreas que suelen ser desafiantes.\n"
                 f"4. Cuida tu bienestar: Descanso adecuado mejora el rendimiento cognitivo.\n"
-                f"5. Considera ser tutor: Ensenar refuerza el aprendizaje y ayuda a otros."
+                f"5. Considera ser tutor: Enseñar refuerza el aprendizaje y ayuda a otros."
             )
         }
 

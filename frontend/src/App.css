@@ -1942,6 +1942,23 @@ td {
   gap: 1rem;
   flex-wrap: wrap;
 }
+/* Agrupa el buscador con los filtros extra de la tabla. */
+.data-table-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+/* Selector de semestre (u otro filtro) junto al buscador. */
+.data-table-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.data-table-filter select {
+  min-width: 205px;
+  padding-right: 2rem;
+}
 .data-table-search {
   display: flex;
   align-items: center;

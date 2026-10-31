@@ -38,8 +38,29 @@ from psycopg2.extras import execute_values
 BACKEND_ENV = Path(__file__).resolve().parent.parent / ".env"
 CSV_DEFAULT = Path(__file__).resolve().parents[4] / "base-de-datos-para-proyecto-de-grado-Ing.csv"
 
-# Mapeo escala inglesa 1-7 -> nivel MCER (A1-C2).
-INGLES_MAP = {1: "A1", 2: "A2", 3: "B1", 4: "B2", 5: "C1", 6: "C2", 7: "C2"}
+# Mapeo de la escala de ingles del CSV (1-7) al nivel MCER.
+#
+# La escala del export NO es MCER: el 6 y el 7 significan "B1" (antes se
+# mapeaban a "C2" y 211 estudiantes quedaban con nivel C2).
+#   1 y 2   -> A1
+#   3, 4, 5 -> A2
+#   6 y 7   -> B1
+#   > 7     -> banda C (8 -> C1, 9 o mas -> C2)
+#
+# El export trae filas con 8 y una con 11, asi que la regla se aplica por
+# rango y no con una tabla cerrada.
+def nivel_ingles_desde_escala(n):
+    if n in (1, 2):
+        return "A1"
+    if 3 <= n <= 5:
+        return "A2"
+    if n in (6, 7):
+        return "B1"
+    if n == 8:
+        return "C1"
+    if n >= 9:
+        return "C2"
+    return None
 
 # Defaults asumidos para campos que el CSV no trae.
 DEFAULT_ACCESO_INTERNET   = True
@@ -166,10 +187,10 @@ def parse_participo(raw):
 
 def map_ingles(raw):
     """Devuelve (raw_int, nivel_str)."""
-    n = to_int(raw, 0, 7)
+    n = to_int(raw, 0, 20)
     if n is None or n == 0:
         return (None, None)
-    return n, INGLES_MAP.get(n)
+    return n, nivel_ingles_desde_escala(n)
 
 def derive_promedio_ingenieria(prog, mate):
     """Promedio de los dos campos de ingenieria que trae el CSV."""

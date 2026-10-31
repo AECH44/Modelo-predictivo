@@ -11,12 +11,12 @@
 //   `--reset`, e invalidaba las contrasenas que los estudiantes ya habian
 //   cambiado.
 //
-// Roles protegidos (administrador / rector / decano / profesor) y cuentas
+// Roles protegidos (administrador / coordinador / decano / profesor) y cuentas
 // marcadas como sinteticas NO se tocan: la ingesta del roster no puede
 //Convertir un administrador en estudiante ni viceversa.
 // =====================================================================
 
-const PROTECTED_ROLES = new Set(['administrador', 'rector', 'decano', 'profesor'])
+const PROTECTED_ROLES = new Set(['administrador', 'coordinador', 'decano', 'profesor'])
 
 export async function upsertUserAsStudent(
   client,
